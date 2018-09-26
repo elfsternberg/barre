@@ -1,3 +1,5 @@
+use std::fmt;
+
 type NodeId = usize;
 
 /// A language of <T> recognizes a few different things:
@@ -15,31 +17,18 @@ type NodeId = usize;
 /// of a single tuple.
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Language<T> 
-    where T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug
+pub enum Language<T>
+where
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display,
 {
     Empty,
     Epsilon,
     Token(T),
     Alt(NodeId, NodeId),
-//    Cat(NodeId, NodeId),
-//    Repeat(NodeId),
+    Cat(NodeId, NodeId),
+    Repeat(NodeId),
 }
 
-/*
-impl<T> Language<T>
-    where T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug
-{
-    pub fn todot(&self) {
-        match self {
-            Language::Empty => println!("[Empty]"),
-            Language::Epsilon => println!("[Epsilon]"),
-            Language::Token(ref i) => println!("[Token ({:?})]", i),
-            Language::Alt(l, r) => println!("[Alternate ({}, {})]", l, r)
-        }
-    }
-}
-*/
 
 /// Given an expression, recognize if the string matches the expression.
 ///
@@ -57,9 +46,10 @@ impl<T> Language<T>
 /// those atoms to look them up.  Once a recognizer has been built,
 /// it's starting point is the LAST item pushed into the arena.
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Recognizer<T>
-    where T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug
+where
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display
 {
     language: Vec<Language<T>>,
     pos: usize,
@@ -68,9 +58,9 @@ pub struct Recognizer<T>
 /// The implementation of this is a vector of Language items.
 
 impl<T> Recognizer<T>
-    where T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug
+where
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display,
 {
-
     /// By default, a Recognizer recognizes only the Empty Language,
     /// i.e.  *no* strings can be recognized.
     pub fn new() -> Recognizer<T> {
@@ -81,24 +71,36 @@ impl<T> Recognizer<T>
         };
         lang.language.push(Language::Empty);
         lang.language.push(Language::Epsilon);
-        assert!(lang.language[0] == Language::Empty);
         lang
     }
 
+    
     /// Push a token into the recognizer, returning its index.
-    pub fn add_tok(&mut self, t: T) -> usize{
+    pub fn add_tok(&mut self, t: T) -> usize {
         self.language.push(Language::Token(t));
-        self.pos = self.language.len() - 1;
-        self.pos
+        self.language.len() - 1
     }
 
     /// Push an alternator into the recognizer, returning its index.
     pub fn add_alt(&mut self, l: usize, r: usize) -> usize {
         self.language.push(Language::Alt(l, r));
-        self.pos = self.language.len() - 1;
-        self.pos
+        self.language.len() - 1
     }
 
+    pub fn add_cat(&mut self, l: usize, r: usize) -> usize {
+        self.language.push(Language::Cat(l, r));
+        self.language.len() - 1
+    }
+
+    pub fn add_rep(&mut self, n: usize) -> usize {
+        self.language.push(Language::Repeat(n));
+        self.language.len() - 1
+    }
+
+    fn reinit(&mut self) {
+        self.pos = self.language.len() - 1
+    }
+    
     /// This is the function that determines if it's possible for the
     /// current Language to be nullable (that is, it can return the
     /// empty string).  If it can, then matching can continue, or the
@@ -109,8 +111,8 @@ impl<T> Recognizer<T>
             Language::Epsilon => true,
             Language::Token(_) => false,
             Language::Alt(l, r) => self.nullable(l) || self.nullable(r),
-//            Repeat(_) => true,
-//            Cat(l, r) => nullable(l) && nullable(r),
+            Language::Cat(l, r) => self.nullable(l) && self.nullable(r),
+            Language::Repeat(_) => true,
         }
     }
 
@@ -121,29 +123,37 @@ impl<T> Recognizer<T>
             Language::Empty => 0,
             Language::Epsilon => 1,
             Language::Token(ref d) => {
-                if *d == *c { 1 } else { 0 }
-            },
+                if *d == *c {
+                    1
+                } else {
+                    0
+                }
+            }
             Language::Alt(l, r) => {
                 let dl = self.derive(c, l);
                 let dr = self.derive(c, r);
                 self.add_alt(dl, dr)
-            },
-/*
-            Cat(l, r) => {
-                let left_derivative = Cat(Box::new(derive(c, l)), *r);
-                if nullable(&left_derivative) {
-                    Alt(left_derivative, derive(c, r))
+            }
+            Language::Cat(l, r) => {
+                let derived_left = self.derive(c, l);
+                let left_derivative = self.add_cat(derived_left, r);
+                if self.nullable(derived_left) {
+                    let right_derivative = self.derive(c, r);
+                    self.add_alt(left_derivative, right_derivative)
                 } else {
                     left_derivative
                 }
             }
-            Repeat(n) => Cat(derive(c, n), n),
-             */
+            Language::Repeat(n) => {
+                let derived = self.derive(c, n);
+                self.add_cat(derived, p)
+            }
         }
     }
 
     pub fn inner_recognize<I>(&mut self, items: &mut I) -> bool
-        where I: Iterator<Item = T>
+    where
+        I: Iterator<Item = T>,
     {
         let p = self.pos;
         {
@@ -155,6 +165,10 @@ impl<T> Recognizer<T>
                     match nl {
                         Language::Empty => false,
                         Language::Epsilon => true,
+                        // Essentially, for all other possibilities, we
+                        // just need to recurse across our nodes until
+                        // we hit Empty or Epsilon, and then we're
+                        // done.
                         _ => {
                             self.pos = np;
                             self.inner_recognize(items)
@@ -166,19 +180,71 @@ impl<T> Recognizer<T>
     }
 
     pub fn recognize<I>(&mut self, items: &mut I) -> bool
-        where I: Iterator<Item = T>
+    where
+        I: Iterator<Item = T>,
     {
-        let p = self.pos;
-        let r = self.inner_recognize(items);
-        self.pos = p;
-        r
+        let mut pattern = self.clone();
+        pattern.reinit();
+        pattern.inner_recognize(items)
     }
 }
+
+impl<T> fmt::Display for Recognizer<T> 
+    where T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt_helper<T>(f: &mut fmt::Formatter, language: &Vec<Language<T>>, p: usize) -> fmt::Result
+            where T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display
+        {
+            match language[p] {
+                Language::Empty => write!(f, "⊘")?,
+                Language::Epsilon => write!(f, "ε")?,
+                Language::Token(ref i) => write!(f, "{}", i)?,
+                Language::Alt(l, r) => {
+                    write!(f, "(")?;
+                    fmt_helper(f, language, l)?;
+                    write!(f, "|")?;
+                    let mut c = r;
+                    loop {
+                        let p = match language[c] {
+                            Language::Alt(l, r) => {
+                                fmt_helper(f, language, l)?;
+                                write!(f, "|");
+                                r
+                            },
+                            _ => {
+                                fmt_helper(f, language, r)?;
+                                write!(f, ")");
+                                break;
+                            }
+                        };
+                        c = p;
+                    }
+                    write!(f, "")?;
+                }
+                Language::Cat(l, r) => {
+                    fmt_helper(f, language, l)?;
+                    fmt_helper(f, language, r)?;
+                }
+                Language::Repeat(n) => {
+                    write!(f, "(")?;
+                    fmt_helper(f, language, n)?;
+                    write!(f, ")*")?;
+                }
+            }
+            write!(f, "")
+        }
+
+        let start = self.language.len() - 1;
+        fmt_helper(f, &self.language, start)
+    }            
+}
+
 
 #[cfg(test)]
 mod tests {
     use Recognizer;
-
+    /*
     #[test]
     fn it_works() {
         let mut pattern = Recognizer::<char>::new();
@@ -189,6 +255,7 @@ mod tests {
         assert!(pattern.nullable(2) == false);
         assert!(pattern.recognize(&mut String::from("A").chars()) == true);
         assert!(pattern.recognize(&mut String::from("B").chars()) == false);
+        assert!(pattern.recognize(&mut String::from("").chars()) == false);
     }
 
     #[test]
@@ -203,8 +270,53 @@ mod tests {
         assert!(pattern.recognize(&mut String::from("B").chars()) == true);
         assert!(pattern.recognize(&mut String::from("C").chars()) == false);
     }
-        
-/*        
+    #[test]
+    fn cat_matches() {
+        let mut pattern = Recognizer::<char>::new();
+        let a = pattern.add_tok('A');
+        let b = pattern.add_tok('B');
+        let c = pattern.add_tok('C');
+        let d = pattern.add_tok('D');
+        let e = pattern.add_cat(c, d);
+        let f = pattern.add_cat(b, e);
+        let _ = pattern.add_cat(a, f);
+        assert!(pattern.recognize(&mut String::from("ABCD").chars()) == true);
+        assert!(pattern.recognize(&mut String::from("ACBD").chars()) == false);
+    }
+*/
+
+    #[test]
+    fn can_display() {
+        let mut pattern = Recognizer::<char>::new();
+        let a = pattern.add_tok('A');
+        let b = pattern.add_tok('B');
+        let f = pattern.add_cat(a, b);
+        let g = pattern.add_rep(f);
+        let h = pattern.add_tok('C');
+        let _ = pattern.add_cat(g, h);
+        assert!(format!("{}", pattern) == "(AB)*C");
+    }
+    
+    #[test]
+    fn repeat_matches() {
+        let mut pattern = Recognizer::<char>::new();
+        let a = pattern.add_tok('A');
+        let b = pattern.add_tok('B');
+        let f = pattern.add_cat(a, b);
+        let g = pattern.add_rep(f);
+        let h = pattern.add_tok('C');
+        let _ = pattern.add_cat(g, h);
+
+//        assert!(pattern.recognize(&mut String::from("ABC").chars()) == true);
+//        assert!(pattern.recognize(&mut String::from("ABABC").chars()) == true);
+//        assert!(pattern.recognize(&mut String::from("ABABABABABC").chars()) == true);
+//        assert!(pattern.recognize(&mut String::from("ABABABABAAC").chars()) == false);
+        println!("{}", pattern);
+        assert!(pattern.recognize(&mut String::from("C").chars()) == true);
+     }        
+            
+
+    /*        
         let floater = cat!(
             alt!(Eps, Char("+"), Char("-")),
             Rep(digit),
