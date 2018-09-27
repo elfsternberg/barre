@@ -2,5 +2,6 @@
 name = "regex_derivatives"
 version = "0.1.0"
 authors = ["Elf M. Sternberg <elf.sternberg@gmail.com>"]
+description = "An implementation of Matt Might's Parsing With Derivatives."
 
 [dependencies]
