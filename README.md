@@ -1,3 +1,5 @@
+![Status: Not Working](https://img.shields.io/badge/status-broken-red.svg)
+
 # BARRE - A Regular Expression Engine
 
 This library implements a regular-expression-like engine using
@@ -184,19 +186,19 @@ hope to get to them.
 The basics of the algorithm, as shown in my Python implementation, are
 described in mathematical notation:
 
-D(∅) = ∅
-D(ε) = ∅
-D(c) = ε if c = c'
-D(c') = ∅ if c ≠ c'
-D(p s) = N(p) D(s) | D(p) s
-D(l | r) = D(1) | Dc(r)
+D(∅) = ∅ <br />
+D(ε) = ∅ <br />
+D(c) = ε if c = c' <br />
+D(c') = ∅ if c ≠ c' <br />
+D(p s) = N(p) D(s) | D(p) s <br />
+D(l | r) = D(1) | Dc(r) <br />
 D(e*) = D(e) e*
 
-N(∅) = ∅
-N(ε) = ε
-N(c) = ∅
-N(p s) = N(p) N(s)
-N(l | r) = N(l) | N(r)
+N(∅) = ∅ <br />
+N(ε) = ε <br />
+N(c) = ∅ <br />
+N(p s) = N(p) N(s) <br />
+N(l | r) = N(l) | N(r) <br />
 N(e*) = ε
 
 First, the most basic recognizers are the null ∅, which recognizes no
