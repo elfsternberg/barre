@@ -52,7 +52,7 @@ where
     T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display
 {
     language: Vec<Language<T>>,
-    pos: usize,
+    start: Option<usize>,
 }
 
 /// The implementation of this is a vector of Language items.
@@ -67,7 +67,7 @@ where
         // Currently, this recognizer recognizes no strings of tokens
         let mut lang = Recognizer::<T> {
             language: Vec::with_capacity(20),
-            pos: 0,
+            start: None,
         };
         lang.language.push(Language::Empty);
         lang.language.push(Language::Epsilon);
@@ -97,10 +97,6 @@ where
         self.language.len() - 1
     }
 
-    fn reinit(&mut self) {
-        self.pos = self.language.len() - 1
-    }
-    
     /// This is the function that determines if it's possible for the
     /// current Language to be nullable (that is, it can return the
     /// empty string).  If it can, then matching can continue, or the
@@ -119,9 +115,16 @@ where
     /// Given a step in the recognizer, finds the derivative of the
     /// current step after any symbols have been considered.
     pub fn derive(&mut self, c: &T, p: usize) -> usize {
+        println!("{} {} {:?}", p, c, self);
         match self.language[p].clone() {
+            // Dc(∅) = ∅
             Language::Empty => 0,
-            Language::Epsilon => 1,
+
+            // Dc(ε) = ∅
+            Language::Epsilon => 0,
+
+            // Dc(c) = ε if c = c'
+            // Dc(c') = ∅ if c ≠ c'
             Language::Token(ref d) => {
                 if *d == *c {
                     1
@@ -129,21 +132,31 @@ where
                     0
                 }
             }
+
+            // Dc(re1 | re2) = Dc(re1) | Dc(re2)
             Language::Alt(l, r) => {
                 let dl = self.derive(c, l);
                 let dr = self.derive(c, r);
+                println!("LR: {:?}, {:?}", dl, dr);
                 self.add_alt(dl, dr)
             }
+
+            // Dc(L ○ R) = Dc(L) ○ R if L does not contain the empty string
+            // Dc(L ○ R) = Dc(L) ○ R ∪ Dc(R) if L contains the empty string
             Language::Cat(l, r) => {
-                let derived_left = self.derive(c, l);
-                let left_derivative = self.add_cat(derived_left, r);
-                if self.nullable(derived_left) {
-                    let right_derivative = self.derive(c, r);
-                    self.add_alt(left_derivative, right_derivative)
+                let nld = self.derive(c, l);
+                let lhs = self.add_cat(nld, r);
+                if self.nullable(l) {
+                    println!("Nullable {} {}", l, r);
+                    let rhs = self.derive(c, r);
+                    self.add_alt(lhs, rhs)
                 } else {
-                    left_derivative
+                    println!("Not nullable {} {}", l, r);
+                    lhs
                 }
             }
+
+            // Dc(re*) = Dc(re) re*
             Language::Repeat(n) => {
                 let derived = self.derive(c, n);
                 self.add_cat(derived, p)
@@ -151,28 +164,28 @@ where
         }
     }
 
-    pub fn inner_recognize<I>(&mut self, items: &mut I) -> bool
-    where
-        I: Iterator<Item = T>,
+    pub fn scanner<I>(&mut self, items: &mut I, pos: usize) -> bool
+        where I: Iterator<Item = T>,
     {
-        let p = self.pos;
-        {
-            match items.next() {
-                None => self.nullable(p),
-                Some(c) => {
-                    let np = self.derive(&c, p);
-                    let nl = self.language[np].clone();
-                    match nl {
-                        Language::Empty => false,
-                        Language::Epsilon => true,
-                        // Essentially, for all other possibilities, we
-                        // just need to recurse across our nodes until
-                        // we hit Empty or Epsilon, and then we're
-                        // done.
-                        _ => {
-                            self.pos = np;
-                            self.inner_recognize(items)
-                        }
+        println!("Next.");
+        match items.next() {
+            // If there is no next item and we are at a place where the empty string
+            // (Epsilon, not the empty pattern!) *could* be a valid match, return
+            // true.
+            None => self.nullable(pos),
+            
+            Some(ref c) => {
+                let np = self.derive(c, pos);
+                let nl = self.language[np].clone();
+                match nl {
+                    Language::Empty => false,
+                    Language::Epsilon => true,
+                    // Essentially, for all other possibilities, we
+                    // just need to recurse across our nodes until
+                    // we hit Empty or Epsilon, and then we're
+                    // done.
+                    _ => {
+                        self.scanner(items, np)
                     }
                 }
             }
@@ -180,12 +193,17 @@ where
     }
 
     pub fn recognize<I>(&mut self, items: &mut I) -> bool
-    where
-        I: Iterator<Item = T>,
+        where I: Iterator<Item = T>,
     {
-        let mut pattern = self.clone();
-        pattern.reinit();
-        pattern.inner_recognize(items)
+        let start = match self.start {
+            None => {
+                let n = self.language.len() - 1;
+                self.start = Some(n);
+                n
+            }
+            Some(n) => n
+        };
+        self.scanner(items, start)
     }
 }
 
@@ -244,7 +262,7 @@ impl<T> fmt::Display for Recognizer<T>
 #[cfg(test)]
 mod tests {
     use Recognizer;
-    /*
+
     #[test]
     fn it_works() {
         let mut pattern = Recognizer::<char>::new();
@@ -270,6 +288,7 @@ mod tests {
         assert!(pattern.recognize(&mut String::from("B").chars()) == true);
         assert!(pattern.recognize(&mut String::from("C").chars()) == false);
     }
+
     #[test]
     fn cat_matches() {
         let mut pattern = Recognizer::<char>::new();
@@ -283,7 +302,6 @@ mod tests {
         assert!(pattern.recognize(&mut String::from("ABCD").chars()) == true);
         assert!(pattern.recognize(&mut String::from("ACBD").chars()) == false);
     }
-*/
 
     #[test]
     fn can_display() {
@@ -307,15 +325,13 @@ mod tests {
         let h = pattern.add_tok('C');
         let _ = pattern.add_cat(g, h);
 
-//        assert!(pattern.recognize(&mut String::from("ABC").chars()) == true);
-//        assert!(pattern.recognize(&mut String::from("ABABC").chars()) == true);
-//        assert!(pattern.recognize(&mut String::from("ABABABABABC").chars()) == true);
-//        assert!(pattern.recognize(&mut String::from("ABABABABAAC").chars()) == false);
-        println!("{}", pattern);
+        assert!(pattern.recognize(&mut String::from("ABC").chars()) == true);
+        assert!(pattern.recognize(&mut String::from("ABABC").chars()) == true);
+        assert!(pattern.recognize(&mut String::from("ABABABABABC").chars()) == true);
+        assert!(pattern.recognize(&mut String::from("ABAC").chars()) == false);
         assert!(pattern.recognize(&mut String::from("C").chars()) == true);
      }        
             
-
     /*        
         let floater = cat!(
             alt!(Eps, Char("+"), Char("-")),
