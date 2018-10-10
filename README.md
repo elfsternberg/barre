@@ -1,43 +1,41 @@
 ![Status: Not Working](https://img.shields.io/badge/status-broken-red.svg)
 
-# BARRE - A Regular Expression Engine
+# BARRE - Borozowski / Antimirov Rust Regular Expressions
 
 This library implements a regular-expression-like engine using
-Brzozoski's "parsing with derivatives" algorithm rather than the
-traditional DFA/NFA arrangement.  Right now, this is simply a
-*recognizer*, in that it acknowledges that a string matches a regular
-expression, return true or false.  It doesn't do anything special beyond
-that.
+Brzozowski's
+"[parsing with derivatives](http://matt.might.net/articles/parsing-with-derivatives/)"
+algorithm rather than the traditional DFA/NFA arrangement.  Right now,
+this is simply a *recognizer*, in that it acknowledges that a string
+matches a regular expression, return true or false.  It doesn't do
+anything special beyond that.
 
-"BARRE" stands for Brzozoski/Antimirov Regular Expressions.
+Right now I haven't done anything with
+[Antimirov's algorithm](https://pdfs.semanticscholar.org/8b0e/ef83c7f93884a7edcb7d46519879a8dde564.pdf).
 
-Right now I haven't done anything with [Antimirov's algorithm](https://pdfs.semanticscholar.org/8b0e/ef83c7f93884a7edcb7d46519879a8dde564.pdf).  
-
-## Acknowledgements
-
-Matt Might has implemented parsing with derivatives in his blog post
-[Yacc Is Dead](http://matt.might.net/articles/parsing-with-derivatives/)
-and subsequent research, in a variety of languages including Racket,
-Scala, and Haskell.  You'll note that all of those are functional,
-garbage-collected languages.  The best implementation, in the sense of
-being the most "readable", is the
-[Racket Implementation](https://github.com/plum-umd/parsing-with-derivatives/tree/master/racket-code/racket)
-at the Programming Languages at University of Maryland program, and it's
-what I've been using as an example, although my first draft is line-for
-line a reimplementation of my
-[Python example](https://elfsternberg.com/2018/01/24/parsing-derivatives-naive-python-edition/).
-
-As Rust is famously hostile to traditional tree structures, I decided to
-use Rust Leipzig's
-[Idiomatic Trees in Rust](https://rust-leipzig.github.io/architecture/2016/12/20/idiomatic-trees-in-rust/)
-example, although my use case is much smaller and simpler than his and
-so I've gone and done it my way.
+Most of this is **not working** at the moment.  What does work is the
+basic, naive recognizer as described in the parsing with derivatives
+link mentioned above, complete with the explosion in time and space.
 
 ## Status
 
 Right now the smallest, most primitive possible engine is working.
 `Token`, `Alt`, `Cat`, and `Repeat` are implemented.  No optimizations have
 been applied.
+
+### [Plan Your Commits](https://dev.to/rpalo/plan-your-commits)
+
+* Implement the macro -> internal representation
+* Implement Any
+* Implement Range
+* Implement Anchor
+* Implement Capture Group
+* Implement Backreferences
+* Implement higher-level Tokenization
+* Implement Recursive Parser
+* Implement Language that recognizes PCRE/PCRE-Light
+* Implement Language that recognizes [Rosie](https://gitlab.com/rosie-pattern-language/rosie/)
+* Implement PEG-like engine that produces "smart" parse trees (c.f. [PegJS](https://pegjs.org/))
 
 ## Description
 
@@ -49,12 +47,12 @@ library consists of the following primitives:
 Empty        Matches nothing
 Epsilon      Matches the empty string
 Token(c)     Matches a single character
-Any(c)       Matches any character
+Any(c)       Matches any character    // Not Implemented
 Alt(n, n)    Alternate
 Cat(n, n)    Concatenation
 Repeat(n)    Repeat
-Cap(n)       Defines a capture group
-Back(i)      Defines a backreference
+Cap(n)       Defines a capture group  // Not Implemented
+Back(i)      Defines a backreference  // Not Implemented
 ```
 
 With these, the entire universe of regular expressions can be described.
@@ -63,7 +61,8 @@ Char('b'))`, and `(a|b)*` is `Repeat(Alt(Char('a'), Char('b')))`.
 
 ### Macros
 
-A macro library is provided.  The above examples could be written as:
+A macro library is provided (but doesn't work yet!).  The above examples
+could be written as:
 
 `alt['a', 'b']`
 
@@ -71,7 +70,7 @@ and
 
 `rep[alt['a', 'b']]`
 
-### Traditional Regexp language
+### Traditional Regexp language (Also Not Implemented Yet)
 
 The traditional regular expression language is handled by a parser
 written in itself (naturally).  It supports the following constructs:
@@ -133,6 +132,26 @@ Note that this does *not* backtrack; that is, if more than one
 expression in the capture group could possibly match the string
 encountered, only the first valid match will be considered for a later
 capture group backreference.
+
+## Acknowledgements
+
+Matt Might has implemented parsing with derivatives in his blog post
+[Yacc Is Dead](http://matt.might.net/articles/parsing-with-derivatives/)
+and subsequent research, in a variety of languages including Racket,
+Scala, and Haskell.  You'll note that all of those are functional,
+garbage-collected languages.  The best implementation, in the sense of
+being the most "readable", is the
+[Racket Implementation](https://github.com/plum-umd/parsing-with-derivatives/tree/master/racket-code/racket)
+at the Programming Languages at University of Maryland program, and it's
+what I've been using as an example, although my first draft is line-for
+line a reimplementation of my
+[Python example](https://elfsternberg.com/2018/01/24/parsing-derivatives-naive-python-edition/).
+
+As Rust is famously hostile to traditional tree structures, I decided to
+use Rust Leipzig's
+[Idiomatic Trees in Rust](https://rust-leipzig.github.io/architecture/2016/12/20/idiomatic-trees-in-rust/)
+example, although my use case is much smaller and simpler than his and
+so I've gone and done it my way.
 
 ## Theory
 
@@ -221,24 +240,6 @@ There are excellent papers on the subject.  I recommend
 [Klipse's](https://blog.klipse.tech/clojure/2016/10/02/parsing-with-derivatives-regular.html)
 for more detail.  
 
-## Status
-
-Not really working.  The Repeat operator is broken, and I'm not sure
-why.
-
-### ToDo
-
-* Fix Repeat()
-* Implement Any()
-* Implement character ranges
-* Implement capture groups
-** Implement backreferences
-* Implement macros
-* Implement higher-level tokenization
-** Provide for Unicode and Char specalizations
-* Implement recursion
-** Implement combinators
-** Implement regex parser
 
 ## NO WARRANTY GRANTED OR IMPLIED
 
