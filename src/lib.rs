@@ -1,4 +1,7 @@
+#![feature(trace_macros)]
+
 use std::fmt;
+use std::iter::Peekable;
 
 type NodeId = usize;
 
@@ -69,30 +72,33 @@ where
             language: Vec::with_capacity(20),
             start: None,
         };
-        lang.language.push(Language::Empty);
         lang.language.push(Language::Epsilon);
+        lang.language.push(Language::Empty);
         lang
     }
 
+    pub fn length(&self) -> usize {
+        self.language.len()
+    }
     
     /// Push a token into the recognizer, returning its index.
-    pub fn add_tok(&mut self, t: T) -> usize {
+    pub fn tok(&mut self, t: T) -> usize {
         self.language.push(Language::Token(t));
         self.language.len() - 1
     }
 
     /// Push an alternator into the recognizer, returning its index.
-    pub fn add_alt(&mut self, l: usize, r: usize) -> usize {
+    pub fn alt(&mut self, l: usize, r: usize) -> usize {
         self.language.push(Language::Alt(l, r));
         self.language.len() - 1
     }
 
-    pub fn add_cat(&mut self, l: usize, r: usize) -> usize {
+    pub fn cat(&mut self, l: usize, r: usize) -> usize {
         self.language.push(Language::Cat(l, r));
         self.language.len() - 1
     }
 
-    pub fn add_rep(&mut self, n: usize) -> usize {
+    pub fn rep(&mut self, n: usize) -> usize {
         self.language.push(Language::Repeat(n));
         self.language.len() - 1
     }
@@ -115,21 +121,21 @@ where
     /// Given a step in the recognizer, finds the derivative of the
     /// current step after any symbols have been considered.
     pub fn derive(&mut self, c: &T, p: usize) -> usize {
-        println!("{} {} {:?}", p, c, self);
+        // println!("{} {} {:?}", p, c, self);
         match self.language[p].clone() {
             // Dc(∅) = ∅
-            Language::Empty => 0,
+            Language::Empty => 1,
 
             // Dc(ε) = ∅
-            Language::Epsilon => 0,
+            Language::Epsilon => 1,
 
             // Dc(c) = ε if c = c'
             // Dc(c') = ∅ if c ≠ c'
             Language::Token(ref d) => {
                 if *d == *c {
-                    1
-                } else {
                     0
+                } else {
+                    1
                 }
             }
 
@@ -137,21 +143,19 @@ where
             Language::Alt(l, r) => {
                 let dl = self.derive(c, l);
                 let dr = self.derive(c, r);
-                println!("LR: {:?}, {:?}", dl, dr);
-                self.add_alt(dl, dr)
+                // println!("Alt: {:?} {:?}", dl, dr);
+                self.alt(dl, dr)
             }
 
             // Dc(L ○ R) = Dc(L) ○ R if L does not contain the empty string
             // Dc(L ○ R) = Dc(L) ○ R ∪ Dc(R) if L contains the empty string
             Language::Cat(l, r) => {
                 let nld = self.derive(c, l);
-                let lhs = self.add_cat(nld, r);
+                let lhs = self.cat(nld, r);
                 if self.nullable(l) {
-                    println!("Nullable {} {}", l, r);
                     let rhs = self.derive(c, r);
-                    self.add_alt(lhs, rhs)
+                    self.alt(lhs, rhs)
                 } else {
-                    println!("Not nullable {} {}", l, r);
                     lhs
                 }
             }
@@ -159,15 +163,14 @@ where
             // Dc(re*) = Dc(re) re*
             Language::Repeat(n) => {
                 let derived = self.derive(c, n);
-                self.add_cat(derived, p)
+                self.cat(derived, p)
             }
         }
     }
 
-    pub fn scanner<I>(&mut self, items: &mut I, pos: usize) -> bool
+    pub fn scanner<I>(&mut self, items: &mut Peekable<I>, pos: usize) -> bool
         where I: Iterator<Item = T>,
     {
-        println!("Next.");
         match items.next() {
             // If there is no next item and we are at a place where the empty string
             // (Epsilon, not the empty pattern!) *could* be a valid match, return
@@ -179,7 +182,12 @@ where
                 let nl = self.language[np].clone();
                 match nl {
                     Language::Empty => false,
-                    Language::Epsilon => true,
+                    Language::Epsilon => {
+                        match items.peek() {
+                            Some(_) => false,
+                            None => true
+                        }
+                    },
                     // Essentially, for all other possibilities, we
                     // just need to recurse across our nodes until
                     // we hit Empty or Epsilon, and then we're
@@ -195,6 +203,7 @@ where
     pub fn recognize<I>(&mut self, items: &mut I) -> bool
         where I: Iterator<Item = T>,
     {
+        let mut items = items.peekable();
         let start = match self.start {
             None => {
                 let n = self.language.len() - 1;
@@ -203,7 +212,7 @@ where
             }
             Some(n) => n
         };
-        self.scanner(items, start)
+        self.scanner(&mut items, start)
     }
 }
 
@@ -259,17 +268,103 @@ impl<T> fmt::Display for Recognizer<T>
 }
 
 
+macro_rules! re {
+    () => { re!{ char; } };
+    
+    ( $sty:ty ; ) => { Recognizer::<$sty>::new() };
+
+    (@process $pt:ident, $op:ident { $lop:ident { $($lex:tt)+ }, $rop:ident { $($rex:tt)+ } }) => {
+        {
+            let l = re!(@process $pt, $lop { $($lex)* });
+            let r = re!(@process $pt, $rop { $($rex)* });
+            $pt.$op(l, r)
+        }
+    };
+
+    (@process $pt:ident, $op:ident { $lop:ident { $($lex:tt)+ }, $rop:ident { $($rex:tt)+ }, $($xex:tt)+ }) => {
+        {
+            let l = re!(@process $pt, $lop { $($lex)* });
+            let r = re!(@process $pt, $op { $rop { $($rex)* }, $($xex)* });
+            $pt.$op(l, r)
+        }
+    };
+
+    (@process $pt:ident, rep { $iop:ident { $($iex:tt)+ } }) => {
+        {
+            let r = re!(@process $pt, $iop { $($iex)* });
+            $pt.rep(r)
+        }
+    };
+
+    // Terminator
+    (@process $pt:ident, rep { $ex:expr }) => {
+        {
+            let r = $pt.tok($ex);
+            $pt.rep(r)
+        }
+    };
+    
+    // Terminator
+    (@process $pt:ident, tok { $e:expr }) => {
+        {
+            $pt.tok($e)
+        }
+    };
+
+    // Terminator
+    (@process $pt:ident, $e:expr) => {
+        {
+            $pt.tok($e)
+        }
+    };
+    
+    ($sty:ty; $($cmds:tt)+) => {
+        {
+            let mut pt = Recognizer::<$sty>::new();
+            {
+                let _ = re!(@process pt, $($cmds)*);
+            }
+            pt
+        }
+    };
+
+    ($($cmds:tt)+) => { re!{ char; $($cmds)* } };
+}
+
+
 #[cfg(test)]
 mod tests {
+
     use Recognizer;
+
+    macro_rules! mkpair {
+        ($(($l:expr, $r:expr)),*) => {
+            vec![$(($l, $r)),*]
+            .into_iter()
+            .map(|pair| { (String::from(pair.0), pair.1) });
+        }
+    }
+
+    macro_rules! testpat {
+        ($pt:ident; [$(($l:expr, $r:expr)),*]) => {
+            {
+                let matches = mkpair![$(($l, $r)),*];
+                for pair in matches {
+                    println!("{:?} {:?}", &pair.0, &pair.1);
+                    assert!($pt.recognize(&mut pair.0.chars()) == pair.1);
+                }
+            }
+        }
+    }
 
     #[test]
     fn it_works() {
         let mut pattern = Recognizer::<char>::new();
-        assert!(pattern.nullable(0) == false);
-        assert!(pattern.nullable(1) == true);
+        assert!(pattern.nullable(1) == false);
+        assert!(pattern.nullable(0) == true);
 
-        pattern.add_tok('A');
+        pattern.tok('A');
+        assert!(pattern.recognize(&mut String::from("AA").chars()) == false);
         assert!(pattern.nullable(2) == false);
         assert!(pattern.recognize(&mut String::from("A").chars()) == true);
         assert!(pattern.recognize(&mut String::from("B").chars()) == false);
@@ -279,9 +374,9 @@ mod tests {
     #[test]
     fn alt_matches() {
         let mut pattern = Recognizer::<char>::new();
-        let l = pattern.add_tok('A');
-        let r = pattern.add_tok('B');
-        let altpattern = pattern.add_alt(l, r);
+        let l = pattern.tok('A');
+        let r = pattern.tok('B');
+        let altpattern = pattern.alt(l, r);
         assert!(pattern.nullable(altpattern) == false);
 
         assert!(pattern.recognize(&mut String::from("A").chars()) == true);
@@ -292,13 +387,13 @@ mod tests {
     #[test]
     fn cat_matches() {
         let mut pattern = Recognizer::<char>::new();
-        let a = pattern.add_tok('A');
-        let b = pattern.add_tok('B');
-        let c = pattern.add_tok('C');
-        let d = pattern.add_tok('D');
-        let e = pattern.add_cat(c, d);
-        let f = pattern.add_cat(b, e);
-        let _ = pattern.add_cat(a, f);
+        let a = pattern.tok('A');
+        let b = pattern.tok('B');
+        let c = pattern.tok('C');
+        let d = pattern.tok('D');
+        let e = pattern.cat(c, d);
+        let f = pattern.cat(b, e);
+        let _ = pattern.cat(a, f);
         assert!(pattern.recognize(&mut String::from("ABCD").chars()) == true);
         assert!(pattern.recognize(&mut String::from("ACBD").chars()) == false);
     }
@@ -306,44 +401,113 @@ mod tests {
     #[test]
     fn can_display() {
         let mut pattern = Recognizer::<char>::new();
-        let a = pattern.add_tok('A');
-        let b = pattern.add_tok('B');
-        let f = pattern.add_cat(a, b);
-        let g = pattern.add_rep(f);
-        let h = pattern.add_tok('C');
-        let _ = pattern.add_cat(g, h);
+        let a = pattern.tok('A');
+        let b = pattern.tok('B');
+        let f = pattern.cat(a, b);
+        let g = pattern.rep(f);
+        let h = pattern.tok('C');
+        let _ = pattern.cat(g, h);
         assert!(format!("{}", pattern) == "(AB)*C");
     }
     
     #[test]
     fn repeat_matches() {
         let mut pattern = Recognizer::<char>::new();
-        let a = pattern.add_tok('A');
-        let b = pattern.add_tok('B');
-        let f = pattern.add_cat(a, b);
-        let g = pattern.add_rep(f);
-        let h = pattern.add_tok('C');
-        let _ = pattern.add_cat(g, h);
+        let a = pattern.tok('A');
+        let b = pattern.tok('B');
+        let f = pattern.cat(a, b);
+        let g = pattern.rep(f);
+        let h = pattern.tok('C');
+        let _ = pattern.cat(g, h);
 
         assert!(pattern.recognize(&mut String::from("ABC").chars()) == true);
         assert!(pattern.recognize(&mut String::from("ABABC").chars()) == true);
         assert!(pattern.recognize(&mut String::from("ABABABABABC").chars()) == true);
         assert!(pattern.recognize(&mut String::from("ABAC").chars()) == false);
         assert!(pattern.recognize(&mut String::from("C").chars()) == true);
-     }        
-            
-    /*        
-        let floater = cat!(
-            alt!(Eps, Char("+"), Char("-")),
-            Rep(digit),
-            Char("."),
-            digit,
-            Rep(digit)
-        );
-        assert(rematch("-2.0", floater));
-        assert(rematch("+12.12", floater));
-        assert(rematch("1.0", floater));
-        assert(rematch("1", floater) == false);
-        assert(rematch("", floater) == false);
-*/
+    }
+
+    #[test]
+    fn simple_token_macro() {
+        let mut pattern = re!{char; tok { 'A' } };
+        testpat!(pattern; [("A", true), ("AA", false), ("B", false), ("", false)]);
+    }
+
+    #[test]
+    fn expression_token_macro() {
+        let mut pattern = re!{char; 'A'};
+        testpat!(pattern; [("A", true), ("AA", false), ("B", false), ("", false)]);
+    }
+
+    /* Important, because this confused me: The repeat operator is zero
+       or more, so the empty string is valid here.
+     */
+    
+    #[test]
+    fn simple_repeat_macro() {
+        let mut pattern = re!{char; rep { tok { 'A' } } };
+        testpat!(pattern; [
+            ("A", true), ("AA", true), ("B", false), ("", true), ("AAAAA", true),
+            ("AAAAB", false), ("BAAAA", false)
+        ]);
+    }
+
+    #[test]
+    fn repeat_expression_macro() {
+        let mut pattern = re!{char; rep { 'A' } };
+        testpat!(pattern; [
+            ("A", true), ("AA", true), ("B", false), ("", true), ("AAAAA", true),
+            ("AAAAB", false), ("BAAAA", false)
+        ]);
+    }
+
+    #[test]
+    fn simple_cat_macro() {
+        let mut pattern = re!{char; cat { tok { 'A' }, tok { 'B' } } };
+        testpat!(pattern; [
+            ("AB", true), ("A", false), ("B", false), ("AA", false), ("BB", false),
+            ("AA ", false), ("", false), ("AAB", false)
+        ]);
+    }
+
+    #[test]
+    fn extended_cat_macro() {
+        let mut pattern = re!{char; cat { tok { 'A' }, tok { 'B' }, tok { 'C' } } };
+        testpat!(pattern; [
+            ("ABC", true), ("A", false), ("B", false), ("AAC", false), ("BBA", false),
+            ("AA ", false), ("", false), ("AAB", false)
+        ]);
+    }
+
+    #[test]
+    fn mildly_complex_macro() {
+        // /AB(CC|DDDD)E*F/
+        let mut pattern = re!{char; cat { tok { 'A' }, tok { 'B' }, alt { cat { tok { 'C' }, tok { 'C' } }, cat { tok { 'D' }, tok { 'D' }, tok { 'D' }, tok { 'D' } } }, rep { tok { 'E' } }, tok { 'F' } } };
+        testpat!(pattern; [
+            ("ABCCF", true), ("ABCCEF", true), ("ABCCEEEEEEEF", true), ("ABDDDDF", true), ("ABDDDDEF", true), ("ABDDDDEEEEEEF", true),
+            ("AB", false), ("ABCEF", false), ("ABCDEF", false), ("ABCCEFF", false), ("", false), ("ABCDDF", false)
+        ]);
+    }
+
+    #[test]
+    fn mildly_complex_untyped_macro() {
+        // /AB(CC|DDDD)E*F/
+        let mut pattern = re!{cat { tok { 'A' }, tok { 'B' }, alt { cat { tok { 'C' }, tok { 'C' } }, cat { tok { 'D' }, tok { 'D' }, tok { 'D' }, tok { 'D' } } }, rep { tok { 'E' } }, tok { 'F' } } };
+        testpat!(pattern; [
+            ("ABCCF", true), ("ABCCEF", true), ("ABCCEEEEEEEF", true), ("ABDDDDF", true), ("ABDDDDEF", true), ("ABDDDDEEEEEEF", true),
+            ("AB", false), ("ABCEF", false), ("ABCDEF", false), ("ABCCEFF", false), ("", false), ("ABCDDF", false)
+        ]);
+    }
+
+    #[test]
+    fn empty_untyped_macro() {
+        let pattern = re!{};
+        assert!(pattern.length() == 2);
+    }
+
+    #[test]
+    fn empty_typed_macro() {
+        let pattern = re!{char;};
+        assert!(pattern.length() == 2);
+    }
 }
