@@ -1,5 +1,3 @@
-#![feature(trace_macros)]
-
 use std::fmt;
 use std::iter::Peekable;
 
@@ -32,7 +30,6 @@ where
     Repeat(NodeId),
 }
 
-
 /// Given an expression, recognize if the string matches the expression.
 ///
 /// Traditionally, regular expressions emerged from *generative*
@@ -52,7 +49,7 @@ where
 #[derive(Debug, Clone)]
 pub struct Recognizer<T>
 where
-    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display,
 {
     language: Vec<Language<T>>,
     start: Option<usize>,
@@ -80,7 +77,7 @@ where
     pub fn length(&self) -> usize {
         self.language.len()
     }
-    
+
     /// Push a token into the recognizer, returning its index.
     pub fn tok(&mut self, t: T) -> usize {
         self.language.push(Language::Token(t));
@@ -169,39 +166,37 @@ where
     }
 
     pub fn scanner<I>(&mut self, items: &mut Peekable<I>, pos: usize) -> bool
-        where I: Iterator<Item = T>,
+    where
+        I: Iterator<Item = T>,
     {
         match items.next() {
             // If there is no next item and we are at a place where the empty string
             // (Epsilon, not the empty pattern!) *could* be a valid match, return
             // true.
             None => self.nullable(pos),
-            
+
             Some(ref c) => {
                 let np = self.derive(c, pos);
                 let nl = self.language[np].clone();
                 match nl {
                     Language::Empty => false,
-                    Language::Epsilon => {
-                        match items.peek() {
-                            Some(_) => false,
-                            None => true
-                        }
+                    Language::Epsilon => match items.peek() {
+                        Some(_) => false,
+                        None => true,
                     },
                     // Essentially, for all other possibilities, we
                     // just need to recurse across our nodes until
                     // we hit Empty or Epsilon, and then we're
                     // done.
-                    _ => {
-                        self.scanner(items, np)
-                    }
+                    _ => self.scanner(items, np),
                 }
             }
         }
     }
 
     pub fn recognize<I>(&mut self, items: &mut I) -> bool
-        where I: Iterator<Item = T>,
+    where
+        I: Iterator<Item = T>,
     {
         let mut items = items.peekable();
         let start = match self.start {
@@ -210,18 +205,24 @@ where
                 self.start = Some(n);
                 n
             }
-            Some(n) => n
+            Some(n) => n,
         };
         self.scanner(&mut items, start)
     }
 }
 
-impl<T> fmt::Display for Recognizer<T> 
-    where T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display
+impl<T> fmt::Display for Recognizer<T>
+where
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn fmt_helper<T>(f: &mut fmt::Formatter, language: &Vec<Language<T>>, p: usize) -> fmt::Result
-            where T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display
+        fn fmt_helper<T>(
+            f: &mut fmt::Formatter,
+            language: &Vec<Language<T>>,
+            p: usize,
+        ) -> fmt::Result
+        where
+            T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display,
         {
             match language[p] {
                 Language::Empty => write!(f, "⊘")?,
@@ -238,7 +239,7 @@ impl<T> fmt::Display for Recognizer<T>
                                 fmt_helper(f, language, l)?;
                                 write!(f, "|");
                                 r
-                            },
+                            }
                             _ => {
                                 fmt_helper(f, language, r)?;
                                 write!(f, ")");
@@ -264,30 +265,13 @@ impl<T> fmt::Display for Recognizer<T>
 
         let start = self.language.len() - 1;
         fmt_helper(f, &self.language, start)
-    }            
+    }
 }
-
 
 macro_rules! re {
     () => { re!{ char; } };
-    
+
     ( $sty:ty ; ) => { Recognizer::<$sty>::new() };
-
-    (@process $pt:ident, $op:ident { $lop:ident { $($lex:tt)+ }, $rop:ident { $($rex:tt)+ } }) => {
-        {
-            let l = re!(@process $pt, $lop { $($lex)* });
-            let r = re!(@process $pt, $rop { $($rex)* });
-            $pt.$op(l, r)
-        }
-    };
-
-    (@process $pt:ident, $op:ident { $lop:ident { $($lex:tt)+ }, $rop:ident { $($rex:tt)+ }, $($xex:tt)+ }) => {
-        {
-            let l = re!(@process $pt, $lop { $($lex)* });
-            let r = re!(@process $pt, $op { $rop { $($rex)* }, $($xex)* });
-            $pt.$op(l, r)
-        }
-    };
 
     (@process $pt:ident, rep { $iop:ident { $($iex:tt)+ } }) => {
         {
@@ -297,27 +281,30 @@ macro_rules! re {
     };
 
     // Terminator
-    (@process $pt:ident, rep { $ex:expr }) => {
-        {
-            let r = $pt.tok($ex);
-            $pt.rep(r)
-        }
-    };
-    
-    // Terminator
     (@process $pt:ident, tok { $e:expr }) => {
         {
             $pt.tok($e)
         }
     };
 
-    // Terminator
-    (@process $pt:ident, $e:expr) => {
+    // cat { tok { 'A' }, tok { 'B' } }
+    (@process $pt:ident, $op:ident { $lop:ident { $($lex:tt)+ }, $rop:ident { $($rex:tt)+ } }) => {
         {
-            $pt.tok($e)
+            let l = re!(@process $pt, $lop { $($lex)* });
+            let a = re!(@process $pt, $rop { $($rex)* });
+            $pt.$op(l, a)
         }
     };
-    
+
+    // cat { tok { 'A' }, tok { 'B' }, tok { 'C' } }
+    (@process $pt:ident, $op:ident { $lop:ident { $($lex:tt)+ }, $rop:ident { $($rex:tt)+ }, $($xex:tt)+ }) => {
+        {
+            let l = re!(@process $pt, $lop { $($lex)* });
+            let b = re!(@process $pt, $op { $rop { $($rex)* }, $($xex)* });
+            $pt.$op(l, b)
+        }
+    };
+
     ($sty:ty; $($cmds:tt)+) => {
         {
             let mut pt = Recognizer::<$sty>::new();
@@ -330,7 +317,6 @@ macro_rules! re {
 
     ($($cmds:tt)+) => { re!{ char; $($cmds)* } };
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -409,7 +395,7 @@ mod tests {
         let _ = pattern.cat(g, h);
         assert!(format!("{}", pattern) == "(AB)*C");
     }
-    
+
     #[test]
     fn repeat_matches() {
         let mut pattern = Recognizer::<char>::new();
@@ -433,16 +419,10 @@ mod tests {
         testpat!(pattern; [("A", true), ("AA", false), ("B", false), ("", false)]);
     }
 
-    #[test]
-    fn expression_token_macro() {
-        let mut pattern = re!{char; 'A'};
-        testpat!(pattern; [("A", true), ("AA", false), ("B", false), ("", false)]);
-    }
-
     /* Important, because this confused me: The repeat operator is zero
        or more, so the empty string is valid here.
      */
-    
+
     #[test]
     fn simple_repeat_macro() {
         let mut pattern = re!{char; rep { tok { 'A' } } };
@@ -453,8 +433,8 @@ mod tests {
     }
 
     #[test]
-    fn repeat_expression_macro() {
-        let mut pattern = re!{char; rep { 'A' } };
+    fn repeat_macro() {
+        let mut pattern = re!{char; rep { tok { 'A' } } };
         testpat!(pattern; [
             ("A", true), ("AA", true), ("B", false), ("", true), ("AAAAA", true),
             ("AAAAB", false), ("BAAAA", false)
@@ -482,20 +462,28 @@ mod tests {
     #[test]
     fn mildly_complex_macro() {
         // /AB(CC|DDDD)E*F/
-        let mut pattern = re!{char; cat { tok { 'A' }, tok { 'B' }, alt { cat { tok { 'C' }, tok { 'C' } }, cat { tok { 'D' }, tok { 'D' }, tok { 'D' }, tok { 'D' } } }, rep { tok { 'E' } }, tok { 'F' } } };
+        let mut pattern = re!{char; cat { tok { 'A' }, tok { 'B' },
+        alt { cat { tok { 'C' }, tok { 'C' } },
+              cat { tok { 'D' }, tok { 'D' }, tok { 'D' }, tok { 'D' } } },
+        rep { tok { 'E' } }, tok { 'F' } } };
         testpat!(pattern; [
-            ("ABCCF", true), ("ABCCEF", true), ("ABCCEEEEEEEF", true), ("ABDDDDF", true), ("ABDDDDEF", true), ("ABDDDDEEEEEEF", true),
-            ("AB", false), ("ABCEF", false), ("ABCDEF", false), ("ABCCEFF", false), ("", false), ("ABCDDF", false)
+            ("ABCCF", true), ("ABCCEF", true), ("ABCCEEEEEEEF", true), ("ABDDDDF", true),
+            ("ABDDDDEF", true), ("ABDDDDEEEEEEF", true), ("AB", false), ("ABCEF", false),
+            ("ABCDEF", false), ("ABCCEFF", false), ("", false), ("ABCDDF", false)
         ]);
     }
 
     #[test]
     fn mildly_complex_untyped_macro() {
         // /AB(CC|DDDD)E*F/
-        let mut pattern = re!{cat { tok { 'A' }, tok { 'B' }, alt { cat { tok { 'C' }, tok { 'C' } }, cat { tok { 'D' }, tok { 'D' }, tok { 'D' }, tok { 'D' } } }, rep { tok { 'E' } }, tok { 'F' } } };
+        let mut pattern = re!{cat { tok { 'A' }, tok { 'B' },
+        alt { cat { tok { 'C' }, tok { 'C' } },
+              cat { tok { 'D' }, tok { 'D' }, tok { 'D' }, tok { 'D' } } },
+        rep { tok { 'E' } }, tok { 'F' } } };
         testpat!(pattern; [
-            ("ABCCF", true), ("ABCCEF", true), ("ABCCEEEEEEEF", true), ("ABDDDDF", true), ("ABDDDDEF", true), ("ABDDDDEEEEEEF", true),
-            ("AB", false), ("ABCEF", false), ("ABCDEF", false), ("ABCCEFF", false), ("", false), ("ABCDDF", false)
+            ("ABCCF", true), ("ABCCEF", true), ("ABCCEEEEEEEF", true), ("ABDDDDF", true),
+            ("ABDDDDEF", true), ("ABDDDDEEEEEEF", true), ("AB", false), ("ABCEF", false),
+            ("ABCDEF", false), ("ABCCEFF", false), ("", false), ("ABCDDF", false)
         ]);
     }
 
