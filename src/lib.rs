@@ -1,3 +1,5 @@
+#![feature(trace_macros)]
+
 use std::fmt;
 use std::iter::Peekable;
 
@@ -25,6 +27,7 @@ where
     Empty,
     Epsilon,
     Token(T),
+    Any,
     Alt(NodeId, NodeId),
     Cat(NodeId, NodeId),
     Repeat(NodeId),
@@ -100,6 +103,16 @@ where
         self.language.len() - 1
     }
 
+    pub fn plus(&mut self, n: usize) -> usize {
+        let t = self.rep(n);
+        self.cat(n, t)
+    }
+
+    pub fn any(&mut self) -> usize {
+        self.language.push(Language::Any);
+        self.language.len() - 1
+    }
+    
     /// This is the function that determines if it's possible for the
     /// current Language to be nullable (that is, it can return the
     /// empty string).  If it can, then matching can continue, or the
@@ -109,6 +122,7 @@ where
             Language::Empty => false,
             Language::Epsilon => true,
             Language::Token(_) => false,
+            Language::Any => false,
             Language::Alt(l, r) => self.nullable(l) || self.nullable(r),
             Language::Cat(l, r) => self.nullable(l) && self.nullable(r),
             Language::Repeat(_) => true,
@@ -125,6 +139,9 @@ where
 
             // Dc(ε) = ∅
             Language::Epsilon => 1,
+
+            // Dc(c) = ε, always:
+            Language::Any => 0,
 
             // Dc(c) = ε if c = c'
             // Dc(c') = ∅ if c ≠ c'
@@ -228,6 +245,7 @@ where
                 Language::Empty => write!(f, "⊘")?,
                 Language::Epsilon => write!(f, "ε")?,
                 Language::Token(ref i) => write!(f, "{}", i)?,
+                Language::Any => write!(f, ".")?,
                 Language::Alt(l, r) => {
                     write!(f, "(")?;
                     fmt_helper(f, language, l)?;
@@ -273,13 +291,27 @@ macro_rules! re {
 
     ( $sty:ty ; ) => { Recognizer::<$sty>::new() };
 
+    (@process $pt:ident, plus { $iop:ident { $($iex:tt)+ } }) => {
+        {
+            let n = re!(@process $pt, $iop { $($iex)* });
+            $pt.plus(n)
+        }
+    };
+    
     (@process $pt:ident, rep { $iop:ident { $($iex:tt)+ } }) => {
         {
-            let r = re!(@process $pt, $iop { $($iex)* });
-            $pt.rep(r)
+            let n = re!(@process $pt, $iop { $($iex)* });
+            $pt.rep(n)
         }
     };
 
+    // Terminator
+    (@process $pt:ident, any { $e:expr }) => {
+        {
+            $pt.any()
+        }
+    };
+    
     // Terminator
     (@process $pt:ident, tok { $e:expr }) => {
         {
@@ -291,8 +323,8 @@ macro_rules! re {
     (@process $pt:ident, $op:ident { $lop:ident { $($lex:tt)+ }, $rop:ident { $($rex:tt)+ } }) => {
         {
             let l = re!(@process $pt, $lop { $($lex)* });
-            let a = re!(@process $pt, $rop { $($rex)* });
-            $pt.$op(l, a)
+            let r = re!(@process $pt, $rop { $($rex)* });
+            $pt.$op(l, r)
         }
     };
 
@@ -300,8 +332,8 @@ macro_rules! re {
     (@process $pt:ident, $op:ident { $lop:ident { $($lex:tt)+ }, $rop:ident { $($rex:tt)+ }, $($xex:tt)+ }) => {
         {
             let l = re!(@process $pt, $lop { $($lex)* });
-            let b = re!(@process $pt, $op { $rop { $($rex)* }, $($xex)* });
-            $pt.$op(l, b)
+            let r = re!(@process $pt, $op { $rop { $($rex)* }, $($xex)* });
+            $pt.$op(l, r)
         }
     };
 
@@ -497,5 +529,23 @@ mod tests {
     fn empty_typed_macro() {
         let pattern = re!{char;};
         assert!(pattern.length() == 2);
+    }
+
+    #[test]
+    fn plus_pattern() {
+        let mut pattern = re!{char; plus { tok { 'A' } } };
+        testpat!(pattern; [
+            ("", false), ("A", true), ("AA", true), ("B", false), ("BA", false), ("AAB", false)]);
+    }
+
+    #[test]
+    fn any_pattern() {
+        trace_macros!(true);
+        let mut pattern = re!{char; cat { tok { 'A' }, any { '.' }, tok { 'B' } } };
+        trace_macros!(false);
+        testpat!(pattern; [
+            ("", false), ("ACB", true), ("A.B", true), ("AλB", true), ("AB", false), ("BA", false),
+            ("AEBF", false)]);
+        
     }
 }
