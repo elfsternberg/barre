@@ -1,5 +1,7 @@
 #![feature(trace_macros)]
+#![feature(duration_as_u128)]
 
+extern crate rand;
 use std::fmt;
 use std::iter::Peekable;
 
@@ -72,8 +74,8 @@ where
             language: Vec::with_capacity(20),
             start: None,
         };
-        lang.language.push(Language::Epsilon);
-        lang.language.push(Language::Empty);
+        lang.language.push(Language::Epsilon);  // 0
+        lang.language.push(Language::Empty);    // 1
         lang
     }
 
@@ -111,6 +113,10 @@ where
     pub fn any(&mut self) -> usize {
         self.language.push(Language::Any);
         self.language.len() - 1
+    }
+
+    pub fn que(&mut self, n: usize) -> usize {
+        self.alt(n, 0)  // This or empty.
     }
     
     /// This is the function that determines if it's possible for the
@@ -305,6 +311,13 @@ macro_rules! re {
         }
     };
 
+    (@process $pt:ident, que { $iop:ident $($iex:tt)+ }) => {
+        {
+            let n = re!(@process $pt, $iop { $($iex)* });
+            $pt.que(n)
+        }
+    };
+
     // Terminator
     (@process $pt:ident, any { $e:expr }) => {
         {
@@ -352,6 +365,10 @@ macro_rules! re {
 
 #[cfg(test)]
 mod tests {
+
+    use std::time::{Duration, Instant};
+    use rand::{Rng, thread_rng};
+    use rand::distributions::Uniform;
 
     use Recognizer;
 
@@ -540,12 +557,65 @@ mod tests {
 
     #[test]
     fn any_pattern() {
-        trace_macros!(true);
         let mut pattern = re!{char; cat { tok { 'A' }, any { '.' }, tok { 'B' } } };
-        trace_macros!(false);
         testpat!(pattern; [
             ("", false), ("ACB", true), ("A.B", true), ("AλB", true), ("AB", false), ("BA", false),
             ("AEBF", false)]);
         
+    }
+
+    #[test]
+    fn leading_any() {
+        let mut pattern = re!{char; cat { rep { any { '.' } }, tok { 'B' }, tok { 'C' } } };
+        testpat!(pattern; [
+            ("", false), ("BC", true), ("ZZZZZABC", true), ("λBC", true), ("CB", false), ("B", false),
+            ("AEBF", false)]);
+        
+    }
+    
+    
+    #[test]
+    fn que_pattern() {
+        let mut pattern = re!{char; cat { tok { 'A' }, que { tok { 'C' } }, tok { 'B' } } };
+        testpat!(pattern; [
+            ("", false), ("ACB", true), ("AB", true), ("A.B", false), ("AC", false), ("BA", false),
+            ("AEBF", false)]);
+    }
+
+    fn distribution(max: usize) -> (usize, usize) {
+        let mut rng = thread_rng();
+        let dst = Uniform::new_inclusive(1, max);
+        let x1 = rng.sample(dst);
+        (x1, max - x1)
+    }
+    
+    #[test]
+    fn que_expn_pattern() {
+        let mut pattern = re!{char; cat { rep { any { '.' } },
+                                          que { tok { 'A' } },
+                                          que { tok { 'A' } },
+                                          que { tok { 'A' } },
+                                          tok { 'A' },
+                                          tok { 'A' },
+                                          tok { 'A' },
+                                          rep { any { '.' } }
+        } };
+
+        let mut rng = thread_rng();
+        let dst = Uniform::new_inclusive(3, 6);
+        for _ in 0 .. 10 {
+            let sz = rng.sample(dst);
+            let sr = distribution(29 - sz);
+            let mut sample = "X".repeat(sr.0);
+            sample.push_str(&"A".repeat(sz));
+            sample.push_str(&"Z".repeat(sr.1));
+
+            let now = Instant::now();
+            let result = pattern.recognize(&mut sample.chars());
+            let duration = now.elapsed();
+            println!("Taken: {}.{:04}", duration.as_secs(), duration.subsec_millis());
+            println!("String: {}", sample);
+            assert!(result == true);
+        }
     }
 }

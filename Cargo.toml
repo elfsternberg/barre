@@ -5,3 +5,6 @@ authors = ["Elf M. Sternberg <elf.sternberg@gmail.com>"]
 description = "An implementation of Matt Might's Parsing With Derivatives."
 
 [dependencies]
+rand = "0.5.5"
+
+[dev-dependencies]
