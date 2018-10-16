@@ -1,8 +1,6 @@
-#![feature(trace_macros)]
-#![feature(duration_as_u128)]
-
 extern crate rand;
 use std::fmt;
+use std::iter::FromIterator;
 use std::iter::Peekable;
 
 type NodeId = usize;
@@ -22,13 +20,56 @@ type NodeId = usize;
 /// of a single tuple.
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Range<T>
+where
+    T: std::clone::Clone
+        + std::cmp::PartialEq
+        + std::fmt::Debug
+        + std::fmt::Display
+        + std::cmp::Ord,
+{
+    pub ranges: Vec<(T, T)>,
+}
+
+impl<T> Range<T>
+where
+    T: std::clone::Clone
+        + std::cmp::PartialEq
+        + std::fmt::Debug
+        + std::fmt::Display
+        + std::cmp::Ord,
+{
+    pub fn new(pairs: &[(T, T)]) -> Range<T> {
+        Range {
+            ranges: Vec::from_iter(pairs.iter().map(|ref p| {
+                if p.1 < p.0 {
+                    (p.1.clone(), p.0.clone())
+                } else {
+                    (p.0.clone(), p.1.clone())
+                }
+            })),
+        }
+    }
+
+    pub fn has(&self, t: &T) -> bool {
+        self.ranges.iter().any(|ref p| *t >= p.0 && *t <= p.1)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Language<T>
 where
-    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display,
+    T: std::clone::Clone
+        + std::cmp::PartialEq
+        + std::fmt::Debug
+        + std::fmt::Display
+        + std::cmp::Ord,
 {
     Empty,
     Epsilon,
     Token(T),
+    Range(Range<T>),
+    NRange(Range<T>),
     Any,
     Alt(NodeId, NodeId),
     Cat(NodeId, NodeId),
@@ -51,10 +92,14 @@ where
 /// those atoms to look them up.  Once a recognizer has been built,
 /// it's starting point is the LAST item pushed into the arena.
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Recognizer<T>
 where
-    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display,
+    T: std::clone::Clone
+        + std::cmp::PartialEq
+        + std::fmt::Debug
+        + std::fmt::Display
+        + std::cmp::Ord,
 {
     language: Vec<Language<T>>,
     start: Option<usize>,
@@ -64,7 +109,11 @@ where
 
 impl<T> Recognizer<T>
 where
-    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display,
+    T: std::clone::Clone
+        + std::cmp::PartialEq
+        + std::fmt::Debug
+        + std::fmt::Display
+        + std::cmp::Ord,
 {
     /// By default, a Recognizer recognizes only the Empty Language,
     /// i.e.  *no* strings can be recognized.
@@ -74,8 +123,8 @@ where
             language: Vec::with_capacity(20),
             start: None,
         };
-        lang.language.push(Language::Epsilon);  // 0
-        lang.language.push(Language::Empty);    // 1
+        lang.language.push(Language::Epsilon); // 0
+        lang.language.push(Language::Empty); // 1
         lang
     }
 
@@ -86,6 +135,12 @@ where
     /// Push a token into the recognizer, returning its index.
     pub fn tok(&mut self, t: T) -> usize {
         self.language.push(Language::Token(t));
+        self.language.len() - 1
+    }
+
+    /// Push a token into the recognizer, returning its index.
+    pub fn ext(&mut self, s: T, e: T) -> usize {
+        self.language.push(Language::Range(Range::new(&[(s, e)])));
         self.language.len() - 1
     }
 
@@ -116,9 +171,9 @@ where
     }
 
     pub fn que(&mut self, n: usize) -> usize {
-        self.alt(n, 0)  // This or empty.
+        self.alt(n, 0) // This or empty.
     }
-    
+
     /// This is the function that determines if it's possible for the
     /// current Language to be nullable (that is, it can return the
     /// empty string).  If it can, then matching can continue, or the
@@ -129,6 +184,8 @@ where
             Language::Epsilon => true,
             Language::Token(_) => false,
             Language::Any => false,
+            Language::Range(_) => false,
+            Language::NRange(_) => false,
             Language::Alt(l, r) => self.nullable(l) || self.nullable(r),
             Language::Cat(l, r) => self.nullable(l) && self.nullable(r),
             Language::Repeat(_) => true,
@@ -148,6 +205,22 @@ where
 
             // Dc(c) = ε, always:
             Language::Any => 0,
+
+            Language::Range(ref r) => {
+                if r.has(c) {
+                    0
+                } else {
+                    1
+                }
+            }
+
+            Language::NRange(ref r) => {
+                if r.has(c) {
+                    1
+                } else {
+                    0
+                }
+            }
 
             // Dc(c) = ε if c = c'
             // Dc(c') = ∅ if c ≠ c'
@@ -234,24 +307,42 @@ where
     }
 }
 
-impl<T> fmt::Display for Recognizer<T>
+impl<T> fmt::Debug for Recognizer<T>
 where
-    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display,
+    T: std::clone::Clone
+        + std::cmp::PartialEq
+        + std::fmt::Debug
+        + std::fmt::Display
+        + std::cmp::Ord,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn fmt_helper<T>(
-            f: &mut fmt::Formatter,
-            language: &Vec<Language<T>>,
-            p: usize,
-        ) -> fmt::Result
+        fn fmt_helper<T>(f: &mut fmt::Formatter, language: &[Language<T>], p: usize) -> fmt::Result
         where
-            T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display,
+            T: std::clone::Clone
+                + std::cmp::PartialEq
+                + std::fmt::Debug
+                + std::fmt::Display
+                + std::cmp::Ord,
         {
             match language[p] {
                 Language::Empty => write!(f, "⊘")?,
                 Language::Epsilon => write!(f, "ε")?,
                 Language::Token(ref i) => write!(f, "{}", i)?,
                 Language::Any => write!(f, ".")?,
+                Language::Range(ref r) => {
+                    write!(f, "[");
+                    for pair in r.ranges.iter() {
+                        write!(f, "{:?}-{:?}", pair.0, pair.1);
+                    }
+                    write!(f, "]");
+                }
+                Language::NRange(ref r) => {
+                    write!(f, "[^");
+                    for pair in r.ranges.iter() {
+                        write!(f, "{:?}-{:?}", pair.0, pair.1);
+                    }
+                    write!(f, "]");
+                }
                 Language::Alt(l, r) => {
                     write!(f, "(")?;
                     fmt_helper(f, language, l)?;
@@ -303,7 +394,7 @@ macro_rules! re {
             $pt.plus(n)
         }
     };
-    
+
     (@process $pt:ident, rep { $iop:ident { $($iex:tt)+ } }) => {
         {
             let n = re!(@process $pt, $iop { $($iex)* });
@@ -319,12 +410,17 @@ macro_rules! re {
     };
 
     // Terminator
+    (@process $pt:ident, ext { $s:expr ; $e:expr }) => {
+        $pt.ext($s, $e)
+    };
+
+    // Terminator
     (@process $pt:ident, any { $e:expr }) => {
         {
             $pt.any()
         }
     };
-    
+
     // Terminator
     (@process $pt:ident, tok { $e:expr }) => {
         {
@@ -366,9 +462,9 @@ macro_rules! re {
 #[cfg(test)]
 mod tests {
 
-    use std::time::{Duration, Instant};
-    use rand::{Rng, thread_rng};
     use rand::distributions::Uniform;
+    use rand::{thread_rng, Rng};
+    use std::time::Instant;
 
     use Recognizer;
 
@@ -442,7 +538,7 @@ mod tests {
         let g = pattern.rep(f);
         let h = pattern.tok('C');
         let _ = pattern.cat(g, h);
-        assert!(format!("{}", pattern) == "(AB)*C");
+        assert!(format!("{:?}", pattern) == "(AB)*C");
     }
 
     #[test]
@@ -561,7 +657,6 @@ mod tests {
         testpat!(pattern; [
             ("", false), ("ACB", true), ("A.B", true), ("AλB", true), ("AB", false), ("BA", false),
             ("AEBF", false)]);
-        
     }
 
     #[test]
@@ -570,10 +665,8 @@ mod tests {
         testpat!(pattern; [
             ("", false), ("BC", true), ("ZZZZZABC", true), ("λBC", true), ("CB", false), ("B", false),
             ("AEBF", false)]);
-        
     }
-    
-    
+
     #[test]
     fn que_pattern() {
         let mut pattern = re!{char; cat { tok { 'A' }, que { tok { 'C' } }, tok { 'B' } } };
@@ -588,7 +681,7 @@ mod tests {
         let x1 = rng.sample(dst);
         (x1, max - x1)
     }
-    
+
     #[test]
     fn que_expn_pattern() {
         let mut pattern = re!{char; cat { rep { any { '.' } },
@@ -603,7 +696,7 @@ mod tests {
 
         let mut rng = thread_rng();
         let dst = Uniform::new_inclusive(3, 6);
-        for _ in 0 .. 10 {
+        for _ in 0..10 {
             let sz = rng.sample(dst);
             let sr = distribution(29 - sz);
             let mut sample = "X".repeat(sr.0);
@@ -613,9 +706,22 @@ mod tests {
             let now = Instant::now();
             let result = pattern.recognize(&mut sample.chars());
             let duration = now.elapsed();
-            println!("Taken: {}.{:04}", duration.as_secs(), duration.subsec_millis());
+            println!(
+                "Taken: {}.{:04}",
+                duration.as_secs(),
+                duration.subsec_millis()
+            );
             println!("String: {}", sample);
             assert!(result == true);
         }
+    }
+
+    #[test]
+    fn ext_pattern() {
+        let mut pattern = re!{char; cat{ tok { 'A' }, ext{ 'B' ; 'E' }, tok{ 'F' } } };
+        println!("{:?}", pattern);
+        testpat!(pattern; [
+            ("", false), ("AF", false), ("ABF", true), ("ADF", true), ("ACF", true), ("ACD", false),
+            ("ABC", false), ("ABFG", false)]);
     }
 }

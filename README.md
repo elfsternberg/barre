@@ -20,14 +20,12 @@ link mentioned above, complete with the explosion in time and space.
 ## Status
 
 Right now the smallest, most primitive possible engine is working.
-`Token`, `Alt`, `Cat`, and `Repeat` are implemented.  No optimizations have
-been applied.
+`Token`, `Alt`, `Cat`, and `Repeat` are implemented. `Any`, `Range` and
+`NegativeRange` have been implemented.  Macros for ease of machine
+construction have been implemneted.  No optimizations have been applied.
 
 ### [Plan Your Commits](https://dev.to/rpalo/plan-your-commits)
 
-* Implement the macro -> internal representation
-* Implement Any
-* Implement Range
 * Implement Anchor
 * Implement Capture Group
 * Implement Backreferences
@@ -47,9 +45,11 @@ library consists of the following primitives:
 Empty        Matches nothing
 Epsilon      Matches the empty string
 Token(c)     Matches a single character
-Any(c)       Matches any character    // Not Implemented
+Any()        Matches any character
 Alt(n, n)    Alternate
 Cat(n, n)    Concatenation
+Range(s, n)  Range
+NRange(s, n) Not-In-Range
 Repeat(n)    Repeat
 Cap(n)       Defines a capture group  // Not Implemented
 Back(i)      Defines a backreference  // Not Implemented
@@ -61,14 +61,14 @@ Char('b'))`, and `(a|b)*` is `Repeat(Alt(Char('a'), Char('b')))`.
 
 ### Macros
 
-A macro library is provided (but doesn't work yet!).  The above examples
+A macro library is provided, and usually works!  The above examples
 could be written as:
 
-`alt['a', 'b']`
+`alt{ tok { 'a' }, tok { 'b' } }`
 
 and
 
-`rep[alt['a', 'b']]`
+`rep { alt { tok { 'a' }, tok { 'b' } } }`
 
 ### Traditional Regexp language (Also Not Implemented Yet)
 
