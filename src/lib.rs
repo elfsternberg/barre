@@ -56,6 +56,8 @@ where
     }
 }
 
+
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Language<T>
 where
@@ -286,30 +288,33 @@ where
         }
     }
 
-    pub fn scanner<I>(&mut self, items: &mut Peekable<I>, pos: usize) -> bool
+    pub fn scanner<I>(&mut self, items: &mut Peekable<I>, ipos: usize) -> bool
     where
         I: Iterator<Item = T>,
     {
-        match items.next() {
-            // If there is no next item and we are at a place where the empty string
-            // (Epsilon, not the empty pattern!) *could* be a valid match, return
-            // true.
-            None => self.nullable(pos),
-
-            Some(ref c) => {
-                let np = self.derive(c, pos);
-                let nl = self.language[np].clone();
-                match nl {
-                    Language::Empty => false,
-                    Language::Epsilon => match items.peek() {
-                        Some(_) => false,
-                        None => true,
-                    },
-                    // Essentially, for all other possibilities, we
-                    // just need to recurse across our nodes until
-                    // we hit Empty or Epsilon, and then we're
-                    // done.
-                    _ => self.scanner(items, np),
+        let mut pos = ipos;
+        loop {
+            match items.next() {
+                // If there is no next item and we are at a place where the empty string
+                // (Epsilon, not the empty pattern!) *could* be a valid match, return
+                // true.
+                None => break self.nullable(pos),
+                
+                Some(ref c) => {
+                    let np = self.derive(c, pos);
+                    let nl = self.language[np].clone();
+                    match nl {
+                        Language::Empty => break false,
+                        Language::Epsilon => match items.peek() {
+                            Some(_) => break false,
+                            None => break true,
+                        },
+                        // Essentially, for all other possibilities, we
+                        // just need to recurse across our nodes until
+                        // we hit Empty or Epsilon, and then we're
+                        // done.
+                        _ => { pos = np; }
+                    }
                 }
             }
         }
