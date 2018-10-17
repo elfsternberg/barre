@@ -103,6 +103,8 @@ where
 {
     language: Vec<Language<T>>,
     start: Option<usize>,
+    empty: usize,
+    epsilon: usize,
 }
 
 /// The implementation of this is a vector of Language items.
@@ -122,42 +124,60 @@ where
         let mut lang = Recognizer::<T> {
             language: Vec::with_capacity(20),
             start: None,
+            epsilon: 0,
+            empty: 0,
         };
-        lang.language.push(Language::Epsilon); // 0
-        lang.language.push(Language::Empty); // 1
+        lang.language.push(Language::Epsilon);
+        lang.epsilon = lang.language.len() - 1;
+        lang.language.push(Language::Empty);
+        lang.empty = lang.language.len() - 1;
         lang
     }
 
-    pub fn length(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.language.len()
+    }
+
+    pub fn lastpos(&self) -> usize {
+        self.len() - 1
     }
 
     /// Push a token into the recognizer, returning its index.
     pub fn tok(&mut self, t: T) -> usize {
         self.language.push(Language::Token(t));
-        self.language.len() - 1
+        self.lastpos()
     }
 
     /// Push a token into the recognizer, returning its index.
     pub fn ext(&mut self, s: T, e: T) -> usize {
         self.language.push(Language::Range(Range::new(&[(s, e)])));
-        self.language.len() - 1
+        self.lastpos()
     }
 
     /// Push an alternator into the recognizer, returning its index.
     pub fn alt(&mut self, l: usize, r: usize) -> usize {
-        self.language.push(Language::Alt(l, r));
-        self.language.len() - 1
+        if self.is_empty(l) {
+            r
+        } else if self.is_empty(r) {
+            l
+        } else {
+            self.language.push(Language::Alt(l, r));
+            self.lastpos()
+        }
     }
 
     pub fn cat(&mut self, l: usize, r: usize) -> usize {
-        self.language.push(Language::Cat(l, r));
-        self.language.len() - 1
+        if self.is_empty(l) || self.is_empty(r) {
+            self.empty
+        } else {
+            self.language.push(Language::Cat(l, r));
+            self.lastpos()
+        }
     }
 
     pub fn rep(&mut self, n: usize) -> usize {
         self.language.push(Language::Repeat(n));
-        self.language.len() - 1
+        self.lastpos()
     }
 
     pub fn plus(&mut self, n: usize) -> usize {
@@ -167,11 +187,12 @@ where
 
     pub fn any(&mut self) -> usize {
         self.language.push(Language::Any);
-        self.language.len() - 1
+        self.lastpos()
     }
 
     pub fn que(&mut self, n: usize) -> usize {
-        self.alt(n, 0) // This or empty.
+        let epsilon = self.epsilon;
+        self.alt(n, epsilon) // This or epsilon
     }
 
     /// This is the function that determines if it's possible for the
@@ -192,33 +213,37 @@ where
         }
     }
 
+    fn is_empty(&self, c: usize) -> bool { c == self.empty }
+
+    fn is_epsilon(&self, c: usize) -> bool { c == self.epsilon }
+
     /// Given a step in the recognizer, finds the derivative of the
     /// current step after any symbols have been considered.
     pub fn derive(&mut self, c: &T, p: usize) -> usize {
         // println!("{} {} {:?}", p, c, self);
         match self.language[p].clone() {
             // Dc(∅) = ∅
-            Language::Empty => 1,
+            Language::Empty => self.empty,
 
             // Dc(ε) = ∅
-            Language::Epsilon => 1,
+            Language::Epsilon => self.empty,
 
             // Dc(c) = ε, always:
-            Language::Any => 0,
+            Language::Any => self.epsilon,
 
             Language::Range(ref r) => {
                 if r.has(c) {
-                    0
+                    self.epsilon
                 } else {
-                    1
+                    self.empty
                 }
             }
 
             Language::NRange(ref r) => {
                 if r.has(c) {
-                    1
+                    self.empty
                 } else {
-                    0
+                    self.epsilon
                 }
             }
 
@@ -226,9 +251,9 @@ where
             // Dc(c') = ∅ if c ≠ c'
             Language::Token(ref d) => {
                 if *d == *c {
-                    0
+                    self.epsilon
                 } else {
-                    1
+                    self.empty
                 }
             }
 
@@ -297,7 +322,7 @@ where
         let mut items = items.peekable();
         let start = match self.start {
             None => {
-                let n = self.language.len() - 1;
+                let n = self.lastpos();
                 self.start = Some(n);
                 n
             }
@@ -635,13 +660,13 @@ mod tests {
     #[test]
     fn empty_untyped_macro() {
         let pattern = re!{};
-        assert!(pattern.length() == 2);
+        assert!(pattern.len() == 2);
     }
 
     #[test]
     fn empty_typed_macro() {
         let pattern = re!{char;};
-        assert!(pattern.length() == 2);
+        assert!(pattern.len() == 2);
     }
 
     #[test]
