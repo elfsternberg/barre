@@ -57,7 +57,6 @@ where
 }
 
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Language<T>
 where
@@ -140,7 +139,7 @@ where
         self.language.len()
     }
 
-    pub fn lastpos(&self) -> usize {
+    fn lastpos(&self) -> usize {
         self.len() - 1
     }
 
@@ -201,7 +200,7 @@ where
     /// current Language to be nullable (that is, it can return the
     /// empty string).  If it can, then matching can continue, or the
     /// result is true; otherwise false.
-    pub fn nullable(&self, i: usize) -> bool {
+    fn nullable(&self, i: usize) -> bool {
         match self.language[i] {
             Language::Empty => false,
             Language::Epsilon => true,
@@ -221,7 +220,7 @@ where
 
     /// Given a step in the recognizer, finds the derivative of the
     /// current step after any symbols have been considered.
-    pub fn derive(&mut self, c: &T, p: usize) -> usize {
+    fn derive(&mut self, c: &T, p: usize) -> usize {
         // println!("{} {} {:?}", p, c, self);
         match self.language[p].clone() {
             // Dc(∅) = ∅
@@ -288,7 +287,7 @@ where
         }
     }
 
-    pub fn scanner<I>(&mut self, items: &mut Peekable<I>, ipos: usize) -> bool
+    fn scanner<I>(&mut self, items: &mut Peekable<I>, ipos: usize) -> bool
     where
         I: Iterator<Item = T>,
     {
@@ -319,8 +318,8 @@ where
             }
         }
     }
-
-    pub fn recognize<I>(&mut self, items: &mut I) -> bool
+    
+    fn scan<I>(&mut self, items: &mut I) -> bool 
     where
         I: Iterator<Item = T>,
     {
@@ -335,6 +334,15 @@ where
         };
         self.scanner(&mut items, start)
     }
+
+    pub fn recognize<I>(&mut self, items: &mut I) -> bool
+    where
+        I: Iterator<Item = T>,
+    {
+        let mut runner = self.clone();
+        runner.scan(items)
+    }
+
 }
 
 impl<T> fmt::Debug for Recognizer<T>
@@ -628,10 +636,21 @@ mod tests {
     #[test]
     fn extended_cat_macro() {
         let mut pattern = re!{char; cat { tok { 'A' }, tok { 'B' }, tok { 'C' } } };
-        testpat!(pattern; [
-            ("ABC", true), ("A", false), ("B", false), ("AAC", false), ("BBA", false),
-            ("AA ", false), ("", false), ("AAB", false)
-        ]);
+
+        let matches = mkpair![("ABC", true), ("A", false), ("B", false), ("AAC", false), ("BBA", false),
+                              ("AA ", false), ("", false), ("AAB", false)];
+
+        let mut testlen: Option<usize> = None;
+
+        for pair in matches {
+            let maxlen = if let Some(c) = testlen { c } else {
+                testlen = Some(pattern.len());
+                pattern.len()
+            };
+            println!("{:?} {:?}", &pair.0, &pair.1);
+            assert!(pattern.recognize(&mut pair.0.chars()) == pair.1);
+            assert!(pattern.len() == maxlen);
+        }
     }
 
     #[test]
