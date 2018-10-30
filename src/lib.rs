@@ -2,6 +2,7 @@ extern crate rand;
 use std::fmt;
 use std::iter::FromIterator;
 use std::iter::Peekable;
+use std::collections::HashMap;
 
 type NodeId = usize;
 
@@ -22,22 +23,14 @@ type NodeId = usize;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Range<T>
 where
-    T: std::clone::Clone
-        + std::cmp::PartialEq
-        + std::fmt::Debug
-        + std::fmt::Display
-        + std::cmp::Ord,
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
 {
     pub ranges: Vec<(T, T)>,
 }
 
 impl<T> Range<T>
 where
-    T: std::clone::Clone
-        + std::cmp::PartialEq
-        + std::fmt::Debug
-        + std::fmt::Display
-        + std::cmp::Ord,
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
 {
     pub fn new(pairs: &[(T, T)]) -> Range<T> {
         Range {
@@ -60,11 +53,7 @@ where
 #[derive(Debug, Clone, PartialEq)]
 pub enum Language<T>
 where
-    T: std::clone::Clone
-        + std::cmp::PartialEq
-        + std::fmt::Debug
-        + std::fmt::Display
-        + std::cmp::Ord,
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
 {
     Empty,
     Epsilon,
@@ -96,13 +85,10 @@ where
 #[derive(Clone)]
 pub struct Recognizer<T>
 where
-    T: std::clone::Clone
-        + std::cmp::PartialEq
-        + std::fmt::Debug
-        + std::fmt::Display
-        + std::cmp::Ord,
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
 {
     language: Vec<Language<T>>,
+    memo: HashMap<(NodeId, T), NodeId>,
     start: Option<usize>,
     empty: usize,
     epsilon: usize,
@@ -112,18 +98,15 @@ where
 
 impl<T> Recognizer<T>
 where
-    T: std::clone::Clone
-        + std::cmp::PartialEq
-        + std::fmt::Debug
-        + std::fmt::Display
-        + std::cmp::Ord,
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
 {
     /// By default, a Recognizer recognizes only the Empty Language,
     /// i.e.  *no* strings can be recognized.
     pub fn new() -> Recognizer<T> {
         // Currently, this recognizer recognizes no strings of tokens
         let mut lang = Recognizer::<T> {
-            language: Vec::with_capacity(20),
+            language: Vec::new(),
+            memo: HashMap::new(),
             start: None,
             epsilon: 0,
             empty: 0,
@@ -222,7 +205,13 @@ where
     /// current step after any symbols have been considered.
     fn derive(&mut self, c: &T, p: usize) -> usize {
         // println!("{} {} {:?}", p, c, self);
-        match self.language[p].clone() {
+
+        if let Some(nodeid) = self.memo.get(&(p, c.clone())) {
+            println!("Memo used.");
+            return *nodeid;
+        };
+        
+        let respect_derivative = match self.language[p].clone() {
             // Dc(∅) = ∅
             Language::Empty => self.empty,
 
@@ -284,7 +273,9 @@ where
                 let derived = self.derive(c, n);
                 self.cat(derived, p)
             }
-        }
+        };
+        self.memo.insert((p, c.clone()), respect_derivative);
+        respect_derivative
     }
 
     fn scanner<I>(&mut self, items: &mut Peekable<I>, ipos: usize) -> bool
@@ -347,20 +338,12 @@ where
 
 impl<T> fmt::Debug for Recognizer<T>
 where
-    T: std::clone::Clone
-        + std::cmp::PartialEq
-        + std::fmt::Debug
-        + std::fmt::Display
-        + std::cmp::Ord,
+    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fn fmt_helper<T>(f: &mut fmt::Formatter, language: &[Language<T>], p: usize) -> fmt::Result
         where
-            T: std::clone::Clone
-                + std::cmp::PartialEq
-                + std::fmt::Debug
-                + std::fmt::Display
-                + std::cmp::Ord,
+            T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
         {
             match language[p] {
                 Language::Empty => write!(f, "⊘")?,
