@@ -487,7 +487,7 @@ mod tests {
     use rand::{thread_rng, Rng};
     use std::time::Instant;
 
-    use Recognizer;
+    use crate::Recognizer;
 
     macro_rules! mkpair {
         ($(($l:expr, $r:expr)),*) => {
