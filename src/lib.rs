@@ -20,6 +20,27 @@ type NodeId = usize;
 /// of a single tuple.
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct AltNode<T> {
+    left: Option<NodeId>,
+    right: Option<NodeId>,
+    token: Option<T>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatNode<T> {
+    left: Option<NodeId>,
+    right: Option<NodeId>,
+    token: Option<T>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RepeatNode<T> {
+    nest: Option<NodeId>,
+    token: Option<T>,
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Language<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
@@ -27,9 +48,9 @@ where
     Empty,
     Epsilon,
     Token(T),
-    Alt(NodeId, NodeId),
-    Cat(NodeId, NodeId),
-    Repeat(NodeId),
+    Alt(AltNode<T>),
+    Cat(CatNode<T>),
+    Repeat(RepeatNode<T>),
 }
 
 /// Given an expression, recognize if the string matches the expression.
@@ -100,27 +121,39 @@ where
 
     /// Push an alternator into the recognizer, returning its index.
     pub fn alt(&mut self, l: usize, r: usize) -> usize {
+        self.p_alt(l, r, None)
+    }
+
+    pub fn cat(&mut self, l: usize, r: usize) -> usize {
+        self.p_cat(l, r, None)
+    }
+
+    pub fn rep(&mut self, n: usize) -> usize {
+        self.p_rep(n, None)
+    }
+
+    fn p_alt(&mut self, l: usize, r: usize, t: Option<T>) -> usize {
         if self.is_empty(l) {
             r
         } else if self.is_empty(r) {
             l
         } else {
-            self.language.push(Language::Alt(l, r));
+            self.language.push(Language::Alt(AltNode { left: Some(l), right: Some(r), token: t }));
             self.lastpos()
         }
     }
 
-    pub fn cat(&mut self, l: usize, r: usize) -> usize {
+    fn p_cat(&mut self, l: usize, r: usize, t: Option<T>) -> usize {
         if self.is_empty(l) || self.is_empty(r) {
             self.empty
         } else {
-            self.language.push(Language::Cat(l, r));
+            self.language.push(Language::Cat(CatNode{ left: Some(l), right: Some(r), token: t }));
             self.lastpos()
         }
     }
-
-    pub fn rep(&mut self, n: usize) -> usize {
-        self.language.push(Language::Repeat(n));
+    
+    pub fn p_rep(&mut self, n: usize, t: Option<T>) -> usize {
+        self.language.push(Language::Repeat(RepeatNode { nest: Some(n), token: t }));
         self.lastpos()
     }
 
@@ -133,8 +166,8 @@ where
             Language::Empty => false,
             Language::Epsilon => true,
             Language::Token(_) => false,
-            Language::Alt(l, r) => self.nullable(l) || self.nullable(r),
-            Language::Cat(l, r) => self.nullable(l) && self.nullable(r),
+            Language::Alt(ref alt) => self.nullable(alt.left.unwrap()) || self.nullable(alt.right.unwrap()),
+            Language::Cat(ref cat) => self.nullable(cat.left.unwrap()) && self.nullable(cat.right.unwrap()),
             Language::Repeat(_) => true,
         }
     }
@@ -147,7 +180,6 @@ where
         // println!("{} {} {:?}", p, c, self);
 
         if let Some(nodeid) = self.memo.get(&(p, c.clone())) {
-            println!("Memo used.");
             return *nodeid;
         };
         
@@ -169,30 +201,30 @@ where
             }
 
             // Dc(re1 | re2) = Dc(re1) | Dc(re2)
-            Language::Alt(l, r) => {
-                let dl = self.derive(c, l);
-                let dr = self.derive(c, r);
+            Language::Alt(ref alt) => {
+                let dl = self.derive(c, alt.left.unwrap());
+                let dr = self.derive(c, alt.right.unwrap());
                 // println!("Alt: {:?} {:?}", dl, dr);
-                self.alt(dl, dr)
+                self.p_alt(dl, dr, Some(c.clone()))
             }
 
             // Dc(L ○ R) = Dc(L) ○ R if L does not contain the empty string
             // Dc(L ○ R) = Dc(L) ○ R ∪ Dc(R) if L contains the empty string
-            Language::Cat(l, r) => {
-                let nld = self.derive(c, l);
-                let lhs = self.cat(nld, r);
-                if self.nullable(l) {
-                    let rhs = self.derive(c, r);
-                    self.alt(lhs, rhs)
+            Language::Cat(ref cat) => {
+                let nld = self.derive(c, cat.left.unwrap());
+                let lhs = self.p_cat(nld, cat.right.unwrap(), Some(c.clone()));
+                if self.nullable(cat.left.unwrap()) {
+                    let rhs = self.derive(c, cat.right.unwrap());
+                    self.p_alt(lhs, rhs, Some(c.clone()))
                 } else {
                     lhs
                 }
             }
 
             // Dc(re*) = Dc(re) re*
-            Language::Repeat(n) => {
-                let derived = self.derive(c, n);
-                self.cat(derived, p)
+            Language::Repeat(rep) => {
+                let derived = self.derive(c, rep.nest.unwrap());
+                self.p_cat(derived, p, Some(c.clone()))
             }
         };
         self.memo.insert((p, c.clone()), respect_derivative);
@@ -270,20 +302,20 @@ where
                 Language::Empty => write!(f, "⊘")?,
                 Language::Epsilon => write!(f, "ε")?,
                 Language::Token(ref i) => write!(f, "{}", i)?,
-                Language::Alt(l, r) => {
+                Language::Alt(ref alt) => {
                     write!(f, "(")?;
-                    fmt_helper(f, language, l)?;
+                    fmt_helper(f, language, alt.left.unwrap())?;
                     write!(f, "|")?;
-                    let mut c = r;
+                    let mut c = alt.right.unwrap();
                     loop {
                         let p = match language[c] {
-                            Language::Alt(l, r) => {
-                                fmt_helper(f, language, l)?;
+                            Language::Alt(ref alt) => {
+                                fmt_helper(f, language, alt.left.unwrap())?;
                                 write!(f, "|");
-                                r
+                                alt.right.unwrap()
                             }
                             _ => {
-                                fmt_helper(f, language, r)?;
+                                fmt_helper(f, language, alt.right.unwrap())?;
                                 write!(f, ")");
                                 break;
                             }
@@ -292,13 +324,13 @@ where
                     }
                     write!(f, "")?;
                 }
-                Language::Cat(l, r) => {
-                    fmt_helper(f, language, l)?;
-                    fmt_helper(f, language, r)?;
+                Language::Cat(ref cat) => {
+                    fmt_helper(f, language, cat.left.unwrap())?;
+                    fmt_helper(f, language, cat.right.unwrap())?;
                 }
-                Language::Repeat(n) => {
+                Language::Repeat(ref rep) => {
                     write!(f, "(")?;
-                    fmt_helper(f, language, n)?;
+                    fmt_helper(f, language, rep.nest.unwrap())?;
                     write!(f, ")*")?;
                 }
             }
