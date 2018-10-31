@@ -1,6 +1,5 @@
 extern crate rand;
 use std::fmt;
-use std::iter::FromIterator;
 use std::iter::Peekable;
 use std::collections::HashMap;
 
@@ -50,7 +49,7 @@ where
 /// it's starting point is the LAST item pushed into the arena.
 
 #[derive(Clone)]
-pub struct Recognizer<T>
+pub struct Barre<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
 {
@@ -63,15 +62,15 @@ where
 
 /// The implementation of this is a vector of Language items.
 
-impl<T> Recognizer<T>
+impl<T> Barre<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
 {
-    /// By default, a Recognizer recognizes only the Empty Language,
+    /// By default, a Barre recognizes only the Empty Language,
     /// i.e.  *no* strings can be recognized.
-    pub fn new() -> Recognizer<T> {
+    pub fn new() -> Barre<T> {
         // Currently, this recognizer recognizes no strings of tokens
-        let mut lang = Recognizer::<T> {
+        let mut lang = Barre::<T> {
             language: Vec::new(),
             memo: HashMap::new(),
             start: None,
@@ -141,8 +140,6 @@ where
     }
 
     fn is_empty(&self, c: usize) -> bool { c == self.empty }
-
-    fn is_epsilon(&self, c: usize) -> bool { c == self.epsilon }
 
     /// Given a step in the recognizer, finds the derivative of the
     /// current step after any symbols have been considered.
@@ -260,7 +257,7 @@ where
 
 }
 
-impl<T> fmt::Debug for Recognizer<T>
+impl<T> fmt::Debug for Barre<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
 {
@@ -313,10 +310,11 @@ where
     }
 }
 
+#[allow(unused_macros)]
 macro_rules! re {
     () => { re!{ char; } };
 
-    ( $sty:ty ; ) => { Recognizer::<$sty>::new() };
+    ( $sty:ty ; ) => { Barre::<$sty>::new() };
 
     (@process $pt:ident, rep { $iop:ident { $($iex:tt)+ } }) => {
         {
@@ -352,7 +350,7 @@ macro_rules! re {
 
     ($sty:ty; $($cmds:tt)+) => {
         {
-            let mut pt = Recognizer::<$sty>::new();
+            let mut pt = Barre::<$sty>::new();
             {
                 let _ = re!(@process pt, $($cmds)*);
             }
@@ -366,11 +364,7 @@ macro_rules! re {
 #[cfg(test)]
 mod tests {
 
-    use rand::distributions::Uniform;
-    use rand::{thread_rng, Rng};
-    use std::time::Instant;
-
-    use crate::Recognizer;
+    use crate::Barre;
 
     macro_rules! mkpair {
         ($(($l:expr, $r:expr)),*) => {
@@ -394,7 +388,7 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let mut pattern = Recognizer::<char>::new();
+        let mut pattern = Barre::<char>::new();
         assert!(pattern.nullable(1) == false);
         assert!(pattern.nullable(0) == true);
 
@@ -408,7 +402,7 @@ mod tests {
 
     #[test]
     fn alt_matches() {
-        let mut pattern = Recognizer::<char>::new();
+        let mut pattern = Barre::<char>::new();
         let l = pattern.tok('A');
         let r = pattern.tok('B');
         let altpattern = pattern.alt(l, r);
@@ -421,7 +415,7 @@ mod tests {
 
     #[test]
     fn cat_matches() {
-        let mut pattern = Recognizer::<char>::new();
+        let mut pattern = Barre::<char>::new();
         let a = pattern.tok('A');
         let b = pattern.tok('B');
         let c = pattern.tok('C');
@@ -435,7 +429,7 @@ mod tests {
 
     #[test]
     fn can_display() {
-        let mut pattern = Recognizer::<char>::new();
+        let mut pattern = Barre::<char>::new();
         let a = pattern.tok('A');
         let b = pattern.tok('B');
         let f = pattern.cat(a, b);
@@ -447,7 +441,7 @@ mod tests {
 
     #[test]
     fn repeat_matches() {
-        let mut pattern = Recognizer::<char>::new();
+        let mut pattern = Barre::<char>::new();
         let a = pattern.tok('A');
         let b = pattern.tok('B');
         let f = pattern.cat(a, b);
