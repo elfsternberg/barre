@@ -21,36 +21,6 @@ type NodeId = usize;
 /// of a single tuple.
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Range<T>
-where
-    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
-{
-    pub ranges: Vec<(T, T)>,
-}
-
-impl<T> Range<T>
-where
-    T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
-{
-    pub fn new(pairs: &[(T, T)]) -> Range<T> {
-        Range {
-            ranges: Vec::from_iter(pairs.iter().map(|ref p| {
-                if p.1 < p.0 {
-                    (p.1.clone(), p.0.clone())
-                } else {
-                    (p.0.clone(), p.1.clone())
-                }
-            })),
-        }
-    }
-
-    pub fn has(&self, t: &T) -> bool {
-        self.ranges.iter().any(|ref p| *t >= p.0 && *t <= p.1)
-    }
-}
-
-
-#[derive(Debug, Clone, PartialEq)]
 pub enum Language<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::fmt::Debug + std::fmt::Display + std::cmp::Ord + std::hash::Hash,
@@ -58,9 +28,6 @@ where
     Empty,
     Epsilon,
     Token(T),
-    Range(Range<T>),
-    NRange(Range<T>),
-    Any,
     Alt(NodeId, NodeId),
     Cat(NodeId, NodeId),
     Repeat(NodeId),
@@ -132,12 +99,6 @@ where
         self.lastpos()
     }
 
-    /// Push a token into the recognizer, returning its index.
-    pub fn ext(&mut self, s: T, e: T) -> usize {
-        self.language.push(Language::Range(Range::new(&[(s, e)])));
-        self.lastpos()
-    }
-
     /// Push an alternator into the recognizer, returning its index.
     pub fn alt(&mut self, l: usize, r: usize) -> usize {
         if self.is_empty(l) {
@@ -164,21 +125,6 @@ where
         self.lastpos()
     }
 
-    pub fn plus(&mut self, n: usize) -> usize {
-        let t = self.rep(n);
-        self.cat(n, t)
-    }
-
-    pub fn any(&mut self) -> usize {
-        self.language.push(Language::Any);
-        self.lastpos()
-    }
-
-    pub fn que(&mut self, n: usize) -> usize {
-        let epsilon = self.epsilon;
-        self.alt(n, epsilon) // This or epsilon
-    }
-
     /// This is the function that determines if it's possible for the
     /// current Language to be nullable (that is, it can return the
     /// empty string).  If it can, then matching can continue, or the
@@ -188,9 +134,6 @@ where
             Language::Empty => false,
             Language::Epsilon => true,
             Language::Token(_) => false,
-            Language::Any => false,
-            Language::Range(_) => false,
-            Language::NRange(_) => false,
             Language::Alt(l, r) => self.nullable(l) || self.nullable(r),
             Language::Cat(l, r) => self.nullable(l) && self.nullable(r),
             Language::Repeat(_) => true,
@@ -217,25 +160,6 @@ where
 
             // Dc(ε) = ∅
             Language::Epsilon => self.empty,
-
-            // Dc(c) = ε, always:
-            Language::Any => self.epsilon,
-
-            Language::Range(ref r) => {
-                if r.has(c) {
-                    self.epsilon
-                } else {
-                    self.empty
-                }
-            }
-
-            Language::NRange(ref r) => {
-                if r.has(c) {
-                    self.empty
-                } else {
-                    self.epsilon
-                }
-            }
 
             // Dc(c) = ε if c = c'
             // Dc(c') = ∅ if c ≠ c'
@@ -349,21 +273,6 @@ where
                 Language::Empty => write!(f, "⊘")?,
                 Language::Epsilon => write!(f, "ε")?,
                 Language::Token(ref i) => write!(f, "{}", i)?,
-                Language::Any => write!(f, ".")?,
-                Language::Range(ref r) => {
-                    write!(f, "[");
-                    for pair in r.ranges.iter() {
-                        write!(f, "{:?}-{:?}", pair.0, pair.1);
-                    }
-                    write!(f, "]");
-                }
-                Language::NRange(ref r) => {
-                    write!(f, "[^");
-                    for pair in r.ranges.iter() {
-                        write!(f, "{:?}-{:?}", pair.0, pair.1);
-                    }
-                    write!(f, "]");
-                }
                 Language::Alt(l, r) => {
                     write!(f, "(")?;
                     fmt_helper(f, language, l)?;
@@ -409,36 +318,10 @@ macro_rules! re {
 
     ( $sty:ty ; ) => { Recognizer::<$sty>::new() };
 
-    (@process $pt:ident, plus { $iop:ident { $($iex:tt)+ } }) => {
-        {
-            let n = re!(@process $pt, $iop { $($iex)* });
-            $pt.plus(n)
-        }
-    };
-
     (@process $pt:ident, rep { $iop:ident { $($iex:tt)+ } }) => {
         {
             let n = re!(@process $pt, $iop { $($iex)* });
             $pt.rep(n)
-        }
-    };
-
-    (@process $pt:ident, que { $iop:ident $($iex:tt)+ }) => {
-        {
-            let n = re!(@process $pt, $iop { $($iex)* });
-            $pt.que(n)
-        }
-    };
-
-    // Terminator
-    (@process $pt:ident, ext { $s:expr ; $e:expr }) => {
-        $pt.ext($s, $e)
-    };
-
-    // Terminator
-    (@process $pt:ident, any { $e:expr }) => {
-        {
-            $pt.any()
         }
     };
 
@@ -674,86 +557,5 @@ mod tests {
     fn empty_typed_macro() {
         let pattern = re!{char;};
         assert!(pattern.len() == 2);
-    }
-
-    #[test]
-    fn plus_pattern() {
-        let mut pattern = re!{char; plus { tok { 'A' } } };
-        testpat!(pattern; [
-            ("", false), ("A", true), ("AA", true), ("B", false), ("BA", false), ("AAB", false)]);
-    }
-
-    #[test]
-    fn any_pattern() {
-        let mut pattern = re!{char; cat { tok { 'A' }, any { '.' }, tok { 'B' } } };
-        testpat!(pattern; [
-            ("", false), ("ACB", true), ("A.B", true), ("AλB", true), ("AB", false), ("BA", false),
-            ("AEBF", false)]);
-    }
-
-    #[test]
-    fn leading_any() {
-        let mut pattern = re!{char; cat { rep { any { '.' } }, tok { 'B' }, tok { 'C' } } };
-        testpat!(pattern; [
-            ("", false), ("BC", true), ("ZZZZZABC", true), ("λBC", true), ("CB", false), ("B", false),
-            ("AEBF", false)]);
-    }
-
-    #[test]
-    fn que_pattern() {
-        let mut pattern = re!{char; cat { tok { 'A' }, que { tok { 'C' } }, tok { 'B' } } };
-        testpat!(pattern; [
-            ("", false), ("ACB", true), ("AB", true), ("A.B", false), ("AC", false), ("BA", false),
-            ("AEBF", false)]);
-    }
-
-    fn distribution(max: usize) -> (usize, usize) {
-        let mut rng = thread_rng();
-        let dst = Uniform::new_inclusive(1, max);
-        let x1 = rng.sample(dst);
-        (x1, max - x1)
-    }
-
-    #[test]
-    fn que_expn_pattern() {
-        let mut pattern = re!{char; cat { rep { any { '.' } },
-                                          que { tok { 'A' } },
-                                          que { tok { 'A' } },
-                                          que { tok { 'A' } },
-                                          tok { 'A' },
-                                          tok { 'A' },
-                                          tok { 'A' },
-                                          rep { any { '.' } }
-        } };
-
-        let mut rng = thread_rng();
-        let dst = Uniform::new_inclusive(3, 6);
-        for _ in 0..10 {
-            let sz = rng.sample(dst);
-            let sr = distribution(29 - sz);
-            let mut sample = "X".repeat(sr.0);
-            sample.push_str(&"A".repeat(sz));
-            sample.push_str(&"Z".repeat(sr.1));
-
-            let now = Instant::now();
-            let result = pattern.recognize(&mut sample.chars());
-            let duration = now.elapsed();
-            println!(
-                "Taken: {}.{:04}",
-                duration.as_secs(),
-                duration.subsec_millis()
-            );
-            println!("String: {}", sample);
-            assert!(result == true);
-        }
-    }
-
-    #[test]
-    fn ext_pattern() {
-        let mut pattern = re!{char; cat{ tok { 'A' }, ext{ 'B' ; 'E' }, tok{ 'F' } } };
-        println!("{:?}", pattern);
-        testpat!(pattern; [
-            ("", false), ("AF", false), ("ABF", true), ("ADF", true), ("ACF", true), ("ACD", false),
-            ("ABC", false), ("ABFG", false)]);
     }
 }
