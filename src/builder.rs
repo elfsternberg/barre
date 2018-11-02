@@ -69,12 +69,12 @@ where
 
 #[macro_export]
 macro_rules! cat {
-    ($l:expr, $r:expr, $($x:expr),+) => {
-        cat($l, cat!($r, $($x)*))
-    };
-
     ($l:expr, $r:expr) => {
         cat($l, $r)
+    };
+
+    ($l:expr, $r:expr, $($x:expr),*) => {
+        cat($l, cat!($r, $($x),*))
     };
 }
 
@@ -219,8 +219,31 @@ mod tests {
     }
 
     #[test]
+    fn nested_expression_sample() {
+        let pattern = cat(rep(tok('a')), tok('b'));
+        assert_eq!(format!("{}", pattern), "a*b");
+    }
+
+    #[test]
+    fn nested_expression_macro() {
+        let pattern = cat!(rep(tok('a')), tok('b'));
+        assert_eq!(format!("{}", pattern), "a*b");
+    }
+    #[test]
+    fn extended_cat_macro() {
+        let pattern = cat!(rep(tok('a')), tok('b'), tok('c'), tok('d'));
+        assert_eq!(format!("{}", pattern), "a*bcd");
+    }
+    
+    #[test]
+    fn nested_expression_extended_macro() {
+        let pattern = cat!(tok('c'), tok('b'), tok('c'), rep(tok('a')));
+        assert_eq!(format!("{}", pattern), "cbca*");
+    }
+    
+    #[test]
     fn complex_pattern() {
-        let mut pattern = alt(
+        let pattern = alt(
             cat(tok('f'), cat(tok('o'), tok('o'))),
             alt(
                 cat(tok('b'), cat(tok('a'), tok('r'))),
@@ -232,12 +255,13 @@ mod tests {
 
     #[test]
     fn complex_macro_pattern() {
-        let mut pattern = alt!(
+        let pattern = alt!(
             cat!(tok('f'), tok('o'), tok('o')),
             cat!(tok('b'), tok('a'), tok('r')),
             cat!(tok('b'), tok('a'), tok('z'))
         );
         assert_eq!(format!("{}", pattern), "(foo|bar|baz)");
     }
+
 
 }

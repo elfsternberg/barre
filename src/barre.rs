@@ -42,7 +42,7 @@ pub struct Barre<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
 {
-    original: Vec<Brzop<T>>,
+    // original: Vec<Brzop<T>>,
     language: Vec<Brzop<T>>,
     memo: HashMap<(NodeId, T), NodeId>,
     start: NodeId,
@@ -86,7 +86,7 @@ where
         // Currently, this recognizer recognizes no strings of tokens
         let new_representation = vec![Brzop::Epsilon, Brzop::Empty];
         Barre::<T> {
-            original: new_representation.clone(),
+            // original: new_representation.clone(),
             language: new_representation,
             memo: HashMap::new(),
             start: 1,
@@ -143,7 +143,7 @@ where
         let start = new_representation.len() - 1;
 
         Barre::<T> {
-            original: new_representation.clone(),
+            // original: new_representation.clone(),
             language: new_representation,
             memo: HashMap::new(),
             start: start,
@@ -189,7 +189,7 @@ where
         // If we have already seen this node, go get it and process it.
 
         if let Some(cached_node) = self.memo.get(&(nodeid, token.clone())) {
-            return cached_node.clone();
+            return *cached_node;
         };
 
         let respective_derivative = match self.language[nodeid].clone() {
@@ -278,7 +278,6 @@ where
 mod tests {
 
     use super::Barre;
-
     use builder::{cat, alt, rep, tok};
 
     macro_rules! mkpair {
@@ -323,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn complex_macro_pattern() {
+    fn mildly_complex_macro_pattern() {
         let lang = alt!(
             cat!(tok('f'), tok('o'), tok('o')),
             cat!(tok('b'), tok('a'), tok('r')),
@@ -334,6 +333,22 @@ mod tests {
             ("foo", true), ("bar", true), ("baz", true),
             ("far", false), ("boo", false), ("ba", false),
             ("foobar", false), ("", false)
+        ]);
+    }
+
+    #[test]
+    fn slightly_more_complex_untyped_macro() {
+        // /AB(CC|DDDD)E*F/
+        let lang = cat!(tok('a'), tok('b'),
+                        alt!(cat!(tok('c'), tok('c')),
+                             cat!(tok('d'), tok('d'), tok('d'), tok('d'))),
+                        rep(tok('e')), tok('f'));
+        let mut barre = Barre::from_language(&lang);
+        testpat!(barre; [
+            ("abccf", true), ("abccef", true), ("abcceeeeeeef", true), ("abddddf", true),
+            ("abddddef", true), ("abddddeeeeeef", true), ("ab", false), ("abcef", false),
+            ("abcdef", false), ("abcceff", false), ("", false), ("abcddf", false)
+
         ]);
     }
 }
