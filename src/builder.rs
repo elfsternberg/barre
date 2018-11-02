@@ -80,13 +80,14 @@ macro_rules! cat {
 
 #[macro_export]
 macro_rules! alt {
-    ($l:expr, $r:expr, $($x:expr),+) => {
-        alt($l, alt!($r, $($x)*))
-    };
-
     ($l:expr, $r:expr) => {
         alt($l, $r)
     };
+
+    ($l:expr, $r:expr, $($x:expr),*) => {
+        alt($l, alt!($r, $($x),*))
+    };
+
 }
 
 impl fmt::Display for Token<char> {
