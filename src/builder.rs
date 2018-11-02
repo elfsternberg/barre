@@ -1,21 +1,22 @@
 use std::fmt;
 
 #[derive(PartialEq, Debug)]
-pub struct Token<T>(T)
-    where T: std::fmt::Debug;
+pub struct Token<T>(pub T)
+where
+    T: std::fmt::Debug;
 
 #[derive(PartialEq, Debug)]
-pub struct Alt<T>(Box<Language<T>>, Box<Language<T>>)
+pub struct Alt<T>(pub Box<Language<T>>, pub Box<Language<T>>)
 where
     T: std::fmt::Display + std::fmt::Debug;
 
 #[derive(PartialEq, Debug)]
-pub struct Cat<T>(Box<Language<T>>, Box<Language<T>>)
+pub struct Cat<T>(pub Box<Language<T>>, pub Box<Language<T>>)
 where
     T: std::fmt::Display + std::fmt::Debug;
 
 #[derive(PartialEq, Debug)]
-pub struct Repeat<T>(Box<Language<T>>)
+pub struct Repeat<T>(pub Box<Language<T>>)
 where
     T: std::fmt::Display + std::fmt::Debug;
 
@@ -25,7 +26,7 @@ where
     T: std::fmt::Display + std::fmt::Debug,
 {
     Epsilon,
-    LToken(Token<T>),
+    Token(Token<T>),
     Alt(Alt<T>),
     Cat(Cat<T>),
     Repeat(Repeat<T>),
@@ -56,7 +57,7 @@ pub fn tok<T>(t: T) -> Language<T>
 where
     T: std::fmt::Display + std::fmt::Debug,
 {
-    Language::LToken(Token(t))
+    Language::Token(Token(t))
 }
 
 pub fn eps<T>() -> Language<T>
@@ -66,7 +67,7 @@ where
     Language::Epsilon
 }
 
-#[allow(unused_macros)]
+#[macro_export]
 macro_rules! cat {
     ($l:expr, $r:expr, $($x:expr),+) => {
         cat($l, cat!($r, $($x)*))
@@ -77,7 +78,7 @@ macro_rules! cat {
     };
 }
 
-#[allow(unused_macros)]
+#[macro_export]
 macro_rules! alt {
     ($l:expr, $r:expr, $($x:expr),+) => {
         alt($l, alt!($r, $($x)*))
@@ -88,21 +89,20 @@ macro_rules! alt {
     };
 }
 
-impl fmt::Display for Token<char>
-{
+impl fmt::Display for Token<char> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
 impl<T> fmt::Display for Token<T>
-    where T: std::fmt::Debug
+where
+    T: std::fmt::Debug,
 {
     default fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.0)
     }
 }
-
 
 impl<T> fmt::Display for Alt<T>
 where
@@ -155,7 +155,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self.0 {
-            Language::LToken(_) | Language::Alt(_) => {
+            Language::Token(_) | Language::Alt(_) => {
                 self.0.fmt(f)?;
                 write!(f, "*")
             }
@@ -175,7 +175,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Language::Epsilon => write!(f, "ε"),
-            Language::LToken(ref c) => write!(f, "{}", c),
+            Language::Token(ref c) => write!(f, "{}", c),
             Language::Alt(ref alt) => write!(f, "{}", alt),
             Language::Cat(ref cat) => write!(f, "{}", cat),
             Language::Repeat(ref rep) => write!(f, "{}", rep),
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn simple_patterns() {
         let pattern = tok('A');
-        assert_eq!(pattern, Language::LToken(Token('A')));
+        assert_eq!(pattern, Language::Token(Token('A')));
     }
 
     #[test]
@@ -217,21 +217,27 @@ mod tests {
         println!("{:?}", pattern);
         assert_eq!(format!("{}", pattern), "(a|b|c)");
     }
-    
+
     #[test]
     fn complex_pattern() {
-        let mut pattern = alt(cat(tok('f'), cat(tok('o'), tok('o'))),
-                              alt(cat(tok('b'), cat(tok('a'), tok('r'))),
-                                  cat(tok('b'), cat(tok('a'), tok('z')))));
+        let mut pattern = alt(
+            cat(tok('f'), cat(tok('o'), tok('o'))),
+            alt(
+                cat(tok('b'), cat(tok('a'), tok('r'))),
+                cat(tok('b'), cat(tok('a'), tok('z'))),
+            ),
+        );
         assert_eq!(format!("{}", pattern), "(foo|bar|baz)");
     }
 
     #[test]
     fn complex_macro_pattern() {
-        let mut pattern = alt!(cat!(tok('f'), tok('o'), tok('o')),
-                               cat!(tok('b'), tok('a'), tok('r')),
-                               cat!(tok('b'), tok('a'), tok('z')));
+        let mut pattern = alt!(
+            cat!(tok('f'), tok('o'), tok('o')),
+            cat!(tok('b'), tok('a'), tok('r')),
+            cat!(tok('b'), tok('a'), tok('z'))
+        );
         assert_eq!(format!("{}", pattern), "(foo|bar|baz)");
     }
-    
+
 }
