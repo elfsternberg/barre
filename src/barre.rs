@@ -4,11 +4,23 @@ type NodeId = usize;
 
 use builder::Language;
 
+#[derive(Clone, Copy, Debug)]
+pub enum Brzop
+{
+    Empty,
+    Epsilon,
+    Token,
+    Alt,
+    Cat,
+    Repeat,
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Node<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
 {
+    op: Brzop,
     car: NodeId,
     cdr: NodeId,
     derivative: Option<NodeId>,
@@ -19,22 +31,9 @@ impl<T> Node<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
 {
-    pub fn new(car: NodeId, cdr: NodeId, derivative: Option<NodeId>, token: T) -> Node<T> {
-        Node { car: car, cdr: cdr, derivative: derivative, token: token }
+    pub fn new(op: Brzop, car: NodeId, cdr: NodeId, derivative: Option<NodeId>, token: T) -> Node<T> {
+        Node { op: op, car: car, cdr: cdr, derivative: derivative, token: token }
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum Brzop<T>
-where
-    T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
-{
-    Empty,
-    Epsilon,
-    Token(Node<T>),
-    Alt(Node<T>),
-    Cat(Node<T>),
-    Repeat(Node<T>),
 }
 
 
@@ -42,40 +41,47 @@ pub struct Barre<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
 {
-    // original: Vec<Brzop<T>>,
-    language: Vec<Brzop<T>>,
+    language: Vec<Node<T>>,
     memo: HashMap<(NodeId, T), NodeId>,
     start: NodeId,
     empty: NodeId,
     epsilon: NodeId,
 }
 
-pub fn toknode<T>(token: T) -> Brzop<T>
+pub fn toknode<T>(token: T) -> Node<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
 {
-    Brzop::Token(Node::new(0, 0, None, token))
+    Node::new(Brzop::Token, 0, 0, None, token)
 }
 
-pub fn altnode<T>(car: NodeId, cdr: NodeId, token: T) -> Brzop<T>
+pub fn altnode<T>(car: NodeId, cdr: NodeId, token: T) -> Node<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
 {
-    Brzop::Alt(Node::new(car, cdr, None, token))
+    Node::new(Brzop::Alt, car, cdr, None, token)
 }
 
-pub fn catnode<T>(car: NodeId, cdr: NodeId, token: T) -> Brzop<T>
+pub fn catnode<T>(car: NodeId, cdr: NodeId, token: T) -> Node<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
 {
-    Brzop::Cat(Node::new(car, cdr, None, token))
+    Node::new(Brzop::Cat, car, cdr, None, token)
 }
 
-pub fn repnode<T>(car: NodeId, token: T) -> Brzop<T>
+pub fn repnode<T>(car: NodeId, token: T) -> Node<T>
 where
     T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
 {
-    Brzop::Repeat(Node::new(car, 0, None, token))
+    Node::new(Brzop::Repeat, car, 0, None, token)
+}
+
+fn init_barre_vec<T>() -> Vec<Node<T>>
+where
+    T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
+{
+    vec![Node{ op: Brzop::Epsilon, car: 0, cdr: 0, derivative: None, token: T::default() },
+         Node{ op: Brzop::Empty,   car: 0, cdr: 0, derivative: None, token: T::default() }]
 }
 
 impl<T> Barre<T>
@@ -84,10 +90,8 @@ where
 {
     pub fn new() -> Barre<T> {
         // Currently, this recognizer recognizes no strings of tokens
-        let new_representation = vec![Brzop::Epsilon, Brzop::Empty];
         Barre::<T> {
-            // original: new_representation.clone(),
-            language: new_representation,
+            language: init_barre_vec(),
             memo: HashMap::new(),
             start: 1,
             epsilon: 0,
@@ -98,28 +102,31 @@ where
     pub fn from_language(lang: &Language<T>) -> Barre<T>
     {
 
-        fn language_to_barre<T>(lang: &Language<T>) -> Vec<Brzop<T>>
+        fn language_to_barre<T>(lang: &Language<T>) -> Vec<Node<T>>
             where
             T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
         {
-            let mut new_representation = vec![Brzop::Epsilon, Brzop::Empty];
+            let mut new_representation = init_barre_vec();
 
-            fn language_handler<T>(lang: &Language<T>, r: &mut Vec<Brzop<T>>) -> NodeId
+            fn language_handler<T>(lang: &Language<T>, r: &mut Vec<Node<T>>) -> NodeId
             where
                 T: std::clone::Clone + std::cmp::PartialEq + std::cmp::Eq + std::fmt::Debug + std::fmt::Display + std::default::Default + std::hash::Hash,
             {
                 match lang {
                     Language::Epsilon => 0,
+
                     Language::Token(ref t) => {
                         r.push(toknode(t.0.clone()));
                         r.len() - 1
                     }
+
                     Language::Alt(ref node) => {
                         let car = language_handler(&node.0, r);
                         let cdr = language_handler(&node.1, r);
                         r.push(altnode(car, cdr, T::default()));
                         r.len() - 1
                     }
+
                     Language::Cat(ref node) => {
                         let car = language_handler(&node.0, r);
                         let cdr = language_handler(&node.1, r);
@@ -156,7 +163,7 @@ where
         self.language.len() - 1
     }
 
-    fn push(&mut self, node: Brzop<T>) -> NodeId {
+    fn push(&mut self, node: Node<T>) -> NodeId {
         self.language.push(node);
         self.len()
     }
@@ -185,14 +192,11 @@ where
         self.push(catnode(car, parent, T::default()))
     }
 
-    fn derive(&mut self, nodeid: NodeId, token: &T) -> NodeId {
-        // If we have already seen this node, go get it and process it.
 
-        if let Some(cached_node) = self.memo.get(&(nodeid, token.clone())) {
-            return *cached_node;
-        };
+    fn get_next_derivative(&mut self, node: &Node<T>, token: &T, this: NodeId) -> NodeId {
+        let op = node.op.clone();
 
-        let respective_derivative = match self.language[nodeid].clone() {
+        match op {
             // Dc(∅) = ∅
             Brzop::Empty => self.empty,
 
@@ -201,7 +205,7 @@ where
 
             // Dc(c) = ε if c = c'
             // Dc(c') = ∅ if c ≠ c'
-            Brzop::Token(ref node) => {
+            Brzop::Token => {
                 if node.token == *token {
                     self.epsilon
                 } else {
@@ -210,33 +214,46 @@ where
             }
 
             // Dc(re1 | re2) = Dc(re1) | Dc(re2)
-            Brzop::Alt(ref node) => {
+            Brzop::Alt => {
                 self.push_alt_derivative(&node, token.clone())
             }
 
             // Dc(L ○ R) = Dc(L) ○ R if L does not contain the empty string
             // Dc(L ○ R) = Dc(L) ○ R ∪ Dc(R) if L contains the empty string
-            Brzop::Cat(ref node) => {
+            Brzop::Cat => {
                 self.push_cat_derivative(&node, token.clone())
             }
 
             // Dc(re*) = Dc(re) re*
-            Brzop::Repeat(node) => {
-                self.push_rep_derivative(&node, token.clone(), nodeid)
+            Brzop::Repeat => {
+                self.push_rep_derivative(&node, token.clone(), this)
             }
+        }
+    }
+
+    fn derive(&mut self, nodeid: NodeId, token: &T) -> NodeId {
+        // If we have already seen this node, go get it and process it.
+
+        if let Some(cached_node) = self.memo.get(&(nodeid, token.clone())) {
+            return *cached_node;
         };
-        self.memo.insert((nodeid, token.clone()), respective_derivative);
-        respective_derivative
+
+        let node = &mut self.language[nodeid].clone();
+        let next_derivative = self.get_next_derivative(node, token, nodeid);
+        self.memo.insert((nodeid, token.clone()), next_derivative);
+        next_derivative
     }
 
     fn nullable(&self, node: NodeId) -> bool {
-        match self.language[node] {
+        let node = &self.language[node];
+
+        match node.op {
             Brzop::Empty => false,
             Brzop::Epsilon => true,
-            Brzop::Token(_) => false,
-            Brzop::Alt(ref node) => self.nullable(node.car) || self.nullable(node.cdr),
-            Brzop::Cat(ref node) => self.nullable(node.car) && self.nullable(node.cdr),
-            Brzop::Repeat(_) => true,
+            Brzop::Token => false,
+            Brzop::Alt => self.nullable(node.car) || self.nullable(node.cdr),
+            Brzop::Cat => self.nullable(node.car) && self.nullable(node.cdr),
+            Brzop::Repeat => true,
         }
     }
 
@@ -255,7 +272,7 @@ where
                 
                 Some(ref c) => {
                     let np = self.derive(current_node, c);
-                    let nl = self.language[np].clone();
+                    let nl = &self.language[np].op;
                     match nl {
                         Brzop::Empty => break false,
                         Brzop::Epsilon => match items.peek() {
