@@ -1,20 +1,8 @@
 use std::collections::HashMap;
 
-type NodeId = usize;
-
 use language::Language;
-use types::Siaa;
-
-#[derive(Clone, Copy, Debug)]
-pub enum Node<T: Siaa>
-{
-    Emp,
-    Eps(T),
-    Tok(T),
-    Alt(NodeId, NodeId),
-    Cat(NodeId, NodeId),
-    Rep(NodeId),
-}
+use builder::{init_barre_vec, language_to_vec_rep};
+use types::{Siaa, Node, NodeId};
 
 pub struct Barre<T:Siaa>
 {
@@ -23,11 +11,6 @@ pub struct Barre<T:Siaa>
     start: NodeId,
     empty: NodeId,
     epsilon: NodeId,
-}
-
-fn init_barre_vec<T: Siaa>() -> Vec<Node<T>>
-{
-    vec![Node::Eps(T::default()), Node::Emp]
 }
 
 impl<T: Siaa> Barre<T>
@@ -46,47 +29,7 @@ impl<T: Siaa> Barre<T>
     pub fn from_language(lang: &Language<T>) -> Barre<T>
     {
 
-        fn language_to_barre<T: Siaa>(lang: &Language<T>) -> Vec<Node<T>>
-        {
-            let mut new_representation = init_barre_vec();
-
-            fn language_handler<T: Siaa>(lang: &Language<T>, r: &mut Vec<Node<T>>) -> NodeId
-            {
-                match lang {
-                    Language::Epsilon => 0,
-
-                    Language::Token(ref t) => {
-                        r.push(Node::Tok(t.0.clone()));
-                        r.len() - 1
-                    }
-
-                    Language::Alt(ref node) => {
-                        let car = language_handler(&node.0, r);
-                        let cdr = language_handler(&node.1, r);
-                        r.push(Node::Alt(car, cdr));
-                        r.len() - 1
-                    }
-
-                    Language::Cat(ref node) => {
-                        let car = language_handler(&node.0, r);
-                        let cdr = language_handler(&node.1, r);
-                        r.push(Node::Cat(car, cdr));
-                        r.len() - 1
-                    }
-
-                    Language::Repeat(ref node) => {
-                        let car = language_handler(&node.0, r);
-                        r.push(Node::Rep(car));
-                        r.len() - 1
-                    }
-                }
-            }
-
-            language_handler(&lang, &mut new_representation);
-            new_representation
-        }
-
-        let new_representation = language_to_barre(lang);
+        let new_representation = language_to_vec_rep(lang);
         let start = new_representation.len() - 1;
 
         Barre::<T> {
