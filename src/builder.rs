@@ -123,12 +123,12 @@ where
                 let p = match c {
                     Language::Alt(nalt) => {
                         nalt.0.fmt(f)?;
-                        write!(f, "|");
+                        write!(f, "|")?;
                         &nalt.1
                     }
                     _ => {
                         c.fmt(f)?;
-                        write!(f, ")");
+                        write!(f, ")")?;
                         break;
                     }
                 };
