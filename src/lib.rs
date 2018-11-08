@@ -2,5 +2,5 @@
 
 mod types;
 #[macro_use]
-pub mod builder;
+pub mod language;
 pub mod barre;

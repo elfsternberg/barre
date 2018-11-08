@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 type NodeId = usize;
 
-use builder::Language;
+use language::Language;
 use types::Siaa;
 
 #[derive(Clone, Copy, Debug)]
@@ -220,7 +220,7 @@ impl<T: Siaa> Barre<T>
 mod tests {
 
     use super::Barre;
-    use builder::{cat, alt, rep, tok};
+    use language::{cat, alt, rep, tok};
 
     macro_rules! mkpair {
         ($(($l:expr, $r:expr)),*) => {
