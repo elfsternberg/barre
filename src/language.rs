@@ -235,13 +235,13 @@ mod tests {
         let pattern = cat!(rep(tok('a')), tok('b'), tok('c'), tok('d'));
         assert_eq!(format!("{}", pattern), "a*bcd");
     }
-    
+
     #[test]
     fn nested_expression_extended_macro() {
         let pattern = cat!(tok('c'), tok('b'), tok('c'), rep(tok('a')));
         assert_eq!(format!("{}", pattern), "cbca*");
     }
-    
+
     #[test]
     fn complex_pattern() {
         let pattern = alt(
@@ -263,6 +263,5 @@ mod tests {
         );
         assert_eq!(format!("{}", pattern), "(foo|bar|baz)");
     }
-
 
 }
