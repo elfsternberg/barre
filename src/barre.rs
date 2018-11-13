@@ -137,7 +137,7 @@ impl<T: Siaa> Barre<T> {
 
     fn nullable(&mut self, nodeid: NodeId) -> bool {
         let node = self.language[nodeid].clone();
-        // println!("Nullable, Node: {:-2?} {:?}", nodeid, &node);
+        
 
         use self::Node::*;
         match node {
