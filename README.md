@@ -30,7 +30,6 @@ construction have been implemneted.  No optimizations have been applied.
 * Implement Capture Group
 * Implement Backreferences
 * Implement higher-level Tokenization
-* Implement Recursive Parser
 * Implement Language that recognizes PCRE/PCRE-Light
 * Implement Language that recognizes [Rosie](https://gitlab.com/rosie-pattern-language/rosie/)
 * Implement PEG-like engine that produces "smart" parse trees (c.f. [PegJS](https://pegjs.org/))
