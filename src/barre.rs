@@ -261,6 +261,9 @@ impl<T: Siaa + 'static> Barre<T> {
     where
         I: Iterator<Item = T>,
     {
+        self.language = self.original.clone();
+        self.memo.clear();
+        self.listeners.clear();
         let mut items = items.peekable();
         let mut current_node = self.start;
         loop {
