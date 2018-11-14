@@ -6,56 +6,31 @@ use builder::{init_barre_vec, language_to_vec_rep};
 use language::Language;
 use types::{Alt, Cat, Eps, Laz, Node, NodeId, Nullable, Siaa, TokenClass};
 
-pub struct Barre<T: Siaa> {
-    original: Vec<Node<T>>,
+pub struct NodePair<'a, T: Siaa>(NodeId, &'a mut Node<T>);
+
+pub struct Grammar<T: Siaa> {
     language: Vec<Node<T>>,
     memo: HashMap<(NodeId, T), NodeId>,
     listeners: HashMap<NodeId, Vec<NodeId>>,
     start: NodeId,
-    empty: NodeId,
+    empty: NodeId
 }
 
-pub struct NodePair<'a, T: Siaa>(NodeId, &'a mut Node<T>);
-
-impl<T: Siaa + 'static> Barre<T> {
-    pub fn new() -> Barre<T> {
-        // Currently, this recognizer recognizes no strings of tokens
-        let new_representation = init_barre_vec();
-        let start = new_representation.len() - 1;
-
-        Barre::<T> {
-            original: new_representation.clone(),
-            language: new_representation,
-            memo: HashMap::new(),
-            listeners: HashMap::new(),
-            start: start,
-            empty: start,
-        }
-    }
-
-    pub fn from_language(lang: &Language<T>) -> Barre<T> {
-        let new_representation = language_to_vec_rep(lang);
-        let start = new_representation.len() - 1;
-
-        Barre::<T> {
-            original: new_representation.clone(),
-            language: new_representation,
-            memo: HashMap::new(),
-            listeners: HashMap::new(),
-            start: start,
-            empty: 0,
-        }
-    }
-
+impl<T: Siaa + 'static> Grammar<T> {
     fn len(&self) -> NodeId {
         self.language.len() - 1
     }
-
+    
     fn push(&mut self, node: Node<T>) -> NodeId {
         self.language.push(node);
         self.len()
     }
-
+    
+    //  ___               
+    // | __|__ _ _ __ ___ 
+    // | _/ _ \ '_/ _/ -_)
+    // |_|\___/_| \__\___|
+    //                    
     fn force(&mut self, this: NodeId, parent: NodeId, token: &T) -> NodeId {
         let replacement = {
             let node = self.language[parent].clone();
@@ -92,6 +67,11 @@ impl<T: Siaa + 'static> Barre<T> {
         this
     }
 
+    //  ___          _         
+    // |   \ ___ _ _(_)_ _____ 
+    // | |) / -_) '_| \ V / -_)
+    // |___/\___|_| |_|\_/\___|
+    //                         
     fn get_next_derivative(&mut self, node: &Node<T>, token: &T, this: NodeId) -> NodeId {
         // println!("Derive,   Node: {:-2?} Token: {:?} {:?}", this, token, node);
         match node {
@@ -257,13 +237,15 @@ impl<T: Siaa + 'static> Barre<T> {
         }
     }
 
-    pub fn match_re<I>(&mut self, items: &mut I) -> bool
+    //  ___                  
+    // | _ \__ _ _ _ ___ ___ 
+    // |  _/ _` | '_(_-</ -_)
+    // |_| \__,_|_| /__/\___|
+    //                       
+    pub fn parse<I>(&mut self, items: &mut I) -> bool
     where
         I: Iterator<Item = T>,
     {
-        self.language = self.original.clone();
-        self.memo.clear();
-        self.listeners.clear();
         let mut items = items.peekable();
         let mut current_node = self.start;
         loop {
@@ -299,6 +281,54 @@ impl<T: Siaa + 'static> Barre<T> {
         }
     }
 }
+    
+
+pub struct Barre<T: Siaa> {
+    language: Vec<Node<T>>,
+    start: NodeId,
+    empty: NodeId,
+}
+
+impl<T: Siaa + 'static> Barre<T> {
+    pub fn new() -> Barre<T> {
+        // Currently, this recognizer recognizes no strings of tokens
+        let new_representation = init_barre_vec();
+        let start = new_representation.len() - 1;
+
+        Barre::<T> {
+            language: new_representation,
+            start: start,
+            empty: start,
+        }
+    }
+
+    pub fn from_language(lang: &Language<T>) -> Barre<T> {
+        let new_representation = language_to_vec_rep(lang);
+        let start = new_representation.len() - 1;
+
+        Barre::<T> {
+            language: new_representation,
+            start: start,
+            empty: 0,
+        }
+    }
+
+    pub fn parse<I>(&mut self, items: &mut I) -> bool
+    where
+        I: Iterator<Item = T>
+    {
+        let mut grammar = Grammar {
+            language: self.language.clone(),
+            memo: HashMap::new(),
+            listeners: HashMap::new(),
+            start: self.start,
+            empty: self.empty
+        };
+        
+        grammar.parse(items)
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -320,7 +350,7 @@ mod tests {
                 let matches = mkpair![$(($l, $r)),*];
                 for pair in matches {
                     println!("{:?} {:?}", &pair.0, &pair.1);
-                    assert!($pt.match_re(&mut pair.0.chars()) == pair.1);
+                    assert!($pt.parse(&mut pair.0.chars()) == pair.1);
                 }
             }
         }
