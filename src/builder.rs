@@ -1,47 +1,51 @@
-use types::{Siaa, Node, NodeId};
+use arena::{Arena, NodeId};
+use types::{Siaa, Parser};
 use language::Language;
 
-pub fn init_barre_vec<T: Siaa>() -> Vec<Node<T>>
+pub fn init_barre_arena<T: Siaa>() -> Arena<Parser<T>>
 {
-    vec![Node::Eps(T::default()), Node::Emp]
+    let mut arena = Arena::new();
+    let _ = arena.add(Parser::Emp);
+    let _ = arena.add(Parser::Emp);
+    let _ = arena.add(Parser::Eps(T::default()));
+    arena
 }
 
-pub fn language_to_vec_rep<T: Siaa>(lang: &Language<T>) -> Vec<Node<T>>
+pub fn language_to_arena<T: Siaa>(lang: &Language<T>) -> (Arena<Parser<T>>, NodeId)
 {
-    let mut new_representation = init_barre_vec();
+    let mut new_representation = init_barre_arena();
     
-    fn language_handler<T: Siaa>(lang: &Language<T>, r: &mut Vec<Node<T>>) -> NodeId
+    fn language_handler<T: Siaa>(lang: &Language<T>, r: &mut Arena<Parser<T>>) -> NodeId
     {
         match lang {
-            Language::Epsilon => 0,
+            Language::Epsilon => 2,
             
             Language::Token(ref t) => {
-                r.push(Node::Tok(t.0.clone()));
-                r.len() - 1
-            }
+                r.add(Parser::Tok(t.0.clone()))
+            },
             
             Language::Alt(ref node) => {
-                let car = language_handler(&node.0, r);
-                let cdr = language_handler(&node.1, r);
-                r.push(Node::Alt(car, cdr));
-                r.len() - 1
-            }
+                let ent = r.add(Parser::Alt);
+                r[ent].left = language_handler(&node.0, r);
+                r[ent].right = language_handler(&node.1, r);
+                ent
+            },
             
             Language::Cat(ref node) => {
-                let car = language_handler(&node.0, r);
-                let cdr = language_handler(&node.1, r);
-                r.push(Node::Cat(car, cdr));
-                r.len() - 1
-            }
+                let ent = r.add(Parser::Cat);
+                r[ent].left = language_handler(&node.0, r);
+                r[ent].right = language_handler(&node.1, r);
+                ent
+            },
             
             Language::Repeat(ref node) => {
-                let car = language_handler(&node.0, r);
-                r.push(Node::Rep(car));
-                r.len() - 1
+                let ent = r.add(Parser::Rep);
+                r[ent].left = language_handler(&node.0, r);
+                ent
             }
         }
     }
     
-    language_handler(&lang, &mut new_representation);
-    new_representation
+    let start = language_handler(&lang, &mut new_representation);
+    (new_representation, start)
 }

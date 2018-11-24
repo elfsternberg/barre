@@ -1,68 +1,66 @@
 use std::collections::HashMap;
 
+use arena::{Arena, NodeId};
+
 use language::Language;
-use builder::{init_barre_vec, language_to_vec_rep};
-use types::{Siaa, Node, NodeId};
+use builder::{init_barre_arena, language_to_arena};
+use types::{Siaa, Parser};
 
 pub struct Barre<T:Siaa>
 {
-    language: Vec<Node<T>>,
+    arena: Arena<Parser<T>>,
     memo: HashMap<(NodeId, T), NodeId>,
     start: NodeId,
     empty: NodeId,
     epsilon: NodeId,
 }
 
+macro_rules! add_node {
+    ( $par:ident, $lhs:expr, $rhs: expr ) => {
+        {
+            let newparser = self.arena.add($par);
+            self.arena[newparser].left = $lhs;
+            self.arena[newparser].right = $rhs;
+            newparser
+        }
+    };
+}
+
 impl<T: Siaa> Barre<T>
 {
-    pub fn new() -> Barre<T> {
-        // Currently, this recognizer recognizes no strings of tokens
+    pub fn from_arena(arena: Arena<Parser<T>>, start: NodeId) -> Barre<T> {
         Barre::<T> {
-            language: init_barre_vec(),
-            memo: HashMap::new(),
-            start: 1,
-            epsilon: 0,
-            empty: 1,
-        }
-    }
-
-    pub fn from_language(lang: &Language<T>) -> Barre<T>
-    {
-
-        let new_representation = language_to_vec_rep(lang);
-        let start = new_representation.len() - 1;
-
-        Barre::<T> {
-            // original: new_representation.clone(),
-            language: new_representation,
+            arena: arena,
             memo: HashMap::new(),
             start: start,
-            epsilon: 0,
+            epsilon: 2,
             empty: 1,
         }
     }
-
-    fn len(&self) -> NodeId {
-        self.language.len() - 1
+        
+    pub fn from_language(lang: &Language<T>) -> Barre<T>
+    {
+        let arena_start = language_to_arena(lang);
+        Barre::from_arena(arena_start.0, arena_start.1)
     }
 
-    fn push(&mut self, node: Node<T>) -> NodeId {
-        self.language.push(node);
-        self.len()
+    pub fn new() -> Barre<T> {
+        Barre::from_arena(init_barre_arena(), 1)
     }
 
-    fn get_next_derivative(&mut self, node: &Node<T>, token: &T, this: NodeId) -> NodeId {
-        use self::Node::*;
-        match node {
+    fn get_next_derivative(&mut self, nodeid: NodeId, token: &T) -> NodeId {
+        let node = &self.arena[nodeid].clone();
+
+        match node.data {
             // Dc(∅) = ∅
-            Emp => self.empty,
+            Parser::Emp => self.empty,
 
             // Dc(ε) = ∅
-            Eps(_) => self.empty,
+            Parser::Eps(_) => self.empty,
 
             // Dc(c) = ε if c = c'
             // Dc(c') = ∅ if c ≠ c'
-            Tok(ref t) => {
+            Parser::Tok(ref t) => {
                 if *t == *token {
                     self.epsilon
                 } else {
@@ -71,29 +69,39 @@ impl<T: Siaa> Barre<T>
             }
 
             // Dc(re1 | re2) = Dc(re1) | Dc(re2)
-            Alt(car, cdr) => {
-                let ncar = self.derive(*car, &token);
-                let ncdr = self.derive(*cdr, &token);
-                self.push(Node::Alt(ncar, ncdr))
+            Parser::Alt => {
+                let alt = self.arena.add(Parser::Alt);
+                self.arena[alt].left = self.derive(node.left, &token);
+                self.arena[alt].right = self.derive(node.right, &token);
+                alt
             }
 
             // Dc(L ○ R) = Dc(L) ○ R if L does not contain the empty string
             // Dc(L ○ R) = Dc(L) ○ R ∪ Dc(R) if L contains the empty string
-            Cat(car, cdr) => {
-                let dcl = self.derive(*car, &token);
-                let lhs = self.push(Node::Cat(dcl, *cdr));
-                if self.nullable(*car) {
-                    let dcr = self.derive(*cdr, &token);
-                    self.push(Node::Alt(lhs, dcr))
+            Parser::Cat => {
+                let dcl = self.derive(node.left, &token);
+                let lhs = self.arena.add(Parser::Cat);
+                self.arena[lhs].left = dcl;
+                self.arena[lhs].right = node.right;
+
+                if self.nullable(node.left) {
+                    let dcr = self.derive(node.right, &token);
+                    let nca = self.arena.add(Parser::Alt);
+                    self.arena[nca].left = lhs;
+                    self.arena[nca].right = dcr;
+                    nca
                 } else {
                     lhs
                 }
             }
 
             // Dc(re*) = Dc(re) re*
-            Rep(nest) => {
-                let car = self.derive(*nest, &token);
-                self.push(Node::Cat(car, this))
+            Parser::Rep => {
+                let rep = self.arena.add(Parser::Cat);
+                let car = self.derive(node.left, &token);
+                self.arena[rep].left = car;
+                self.arena[rep].right = nodeid;
+                rep
             }
         }
     }
@@ -105,23 +113,21 @@ impl<T: Siaa> Barre<T>
             return *cached_node;
         };
 
-        let node = &mut self.language[nodeid].clone();
-        let next_derivative = self.get_next_derivative(node, token, nodeid);
+        let next_derivative = self.get_next_derivative(nodeid, token);
         self.memo.insert((nodeid, token.clone()), next_derivative);
         next_derivative
     }
 
-    fn nullable(&self, node: NodeId) -> bool {
-        let node = &self.language[node];
+    fn nullable(&self, nodeid: NodeId) -> bool {
+        let node = &self.arena[nodeid];
 
-        use self::Node::*;
-        match node {
-            Emp => false,
-            Eps(_) => true,
-            Tok(_) => false,
-            Alt(car, cdr) => self.nullable(*car) || self.nullable(*cdr),
-            Cat(car, cdr) => self.nullable(*car) && self.nullable(*cdr),
-            Rep(_) => true,
+        match node.data {
+            Parser::Emp => false,
+            Parser::Eps(_) => true,
+            Parser::Tok(_) => false,
+            Parser::Alt => self.nullable(node.left) || self.nullable(node.right),
+            Parser::Cat => self.nullable(node.left) && self.nullable(node.right),
+            Parser::Rep => true,
         }
     }
 
@@ -131,7 +137,9 @@ impl<T: Siaa> Barre<T>
     {
         let mut items = items.peekable();
         let mut current_node = self.start;
+        println!("START: {:?}", self.start);
         loop {
+            println!("{:?}", self.arena);
             match items.next() {
                 // If there is no next item and we are at a place where the empty string
                 // (Epsilon, not the empty pattern!) *could* be a valid match, return
@@ -140,10 +148,10 @@ impl<T: Siaa> Barre<T>
                 
                 Some(ref c) => {
                     let np = self.derive(current_node, c);
-                    let nl = &self.language[np];
+                    let nl = &self.arena[np].data;
                     match nl {
-                        Node::Emp => break false,
-                        Node::Eps(_) => match items.peek() {
+                        Parser::Emp => break false,
+                        Parser::Eps(_) => match items.peek() {
                             Some(_) => break false,
                             None => break true,
                         },
@@ -197,15 +205,29 @@ mod tests {
 
     #[test]
     fn just_a_cat() {
-        let lang = cat(tok('a'), tok('b'));
+        let lang = cat!(tok('a'), tok('b'));
         let mut barre = Barre::from_language(&lang);
         testpat!(barre; [
             ("ab", true), ("", false), ("b", false),
             ("aab", false), ("aba", false), ("a", false)
         ]);
-
     }
 
+    #[test]
+    fn just_an_alt() {
+        let lang = alt!(tok('a'), tok('b'));
+        let mut barre = Barre::from_language(&lang);
+        testpat!(barre; [("a", true), ("b", true), ("ab", false), ("", false)]);
+    }
+
+    #[test]
+    fn just_a_rep() {
+        let lang = rep(tok('a'));
+        let mut barre = Barre::from_language(&lang);
+        testpat!(barre; [("a", true), ("", true), ("aaaaaa", true), ("aaaaab", false)]);
+    }
+
+    
     #[test]
     fn mildly_complex_macro_pattern() {
         let lang = alt!(

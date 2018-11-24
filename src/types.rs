@@ -1,5 +1,3 @@
-pub type NodeId = usize;
-
 pub trait Siaa:
     std::clone::Clone
     + std::cmp::PartialEq
@@ -23,13 +21,13 @@ impl<T> Siaa for T where
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum Node<T: Siaa>
+pub enum Parser<T: Siaa>
 {
     Emp,
     Eps(T),
     Tok(T),
-    Alt(NodeId, NodeId),
-    Cat(NodeId, NodeId),
-    Rep(NodeId),
+    Alt,
+    Cat,
+    Rep,
 }
 
