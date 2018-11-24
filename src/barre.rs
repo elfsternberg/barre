@@ -40,8 +40,10 @@ impl<T: Siaa> Barre<T>
     where
         I: Iterator<Item = T>,
     {
+        let len = self.arena.len();
         let mut grammar = Grammar {
             arena: self.arena.clone(),
+            delta: vec![None; len],
             memo: HashMap::new(),
             empty: self.empty,
             epsilon: self.epsilon,

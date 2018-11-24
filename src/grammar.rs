@@ -1,19 +1,24 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use types::{Parser, Siaa};
 use arena::{Arena, Node, NodeId};
 
 pub struct Grammar<T: Siaa> {
     pub arena: Arena<Parser<T>>,
+    pub delta: Vec<Option<HashSet<char>>>,
     pub memo: HashMap<(NodeId, T), NodeId>,
     pub empty: NodeId,
     pub epsilon: NodeId,
 }
 
+// Deliberate mechanism to build things in the correct order, so that
+// the compiler's habit of building temporaries is circumvented and
+// the borrow rules work correctly.  Also: A lot easier.
+
 macro_rules! add_node {
     ( $source:expr, $par:expr, $lhs:expr ) => {
         {
             let newparser = $source.add($par);
-            $source[newparser].left = $lhs;
+            $source.arena[newparser].left = $lhs;
             newparser
         }
     };
@@ -23,8 +28,8 @@ macro_rules! add_node {
             let newparser = $source.add($par);
             let car = $lhs;
             let cdr = $rhs;
-            $source[newparser].left = car;
-            $source[newparser].right = cdr;
+            $source.arena[newparser].left = car;
+            $source.arena[newparser].right = cdr;
             newparser
         }
     };
@@ -32,9 +37,19 @@ macro_rules! add_node {
 
 
 impl<T: Siaa> Grammar<T> {
+    fn add(&mut self, parser: Parser<T>) -> NodeId {
+        self.delta.push(None);
+        self.arena.add(parser)
+    }
+
     fn force(&mut self, nodeid: NodeId, parent: NodeId, token: &T) -> NodeId {
         let node = &self.arena[parent].clone();
 
+        // This is a two-step of replacing the lazy node with its
+        // ultimate value.  The two-step is necessary because the
+        // child nodes will be filled in with a similar recursive
+        // process, so the node must be present to be filled in.
+        
         let replacement = {
             match node.data {
                 Parser::Alt => Node::new(Parser::Alt),
@@ -66,7 +81,7 @@ impl<T: Siaa> Grammar<T> {
 
             Parser::Cat => {
                 if self.nullable(node.left) {
-                    self.arena[nodeid].left = add_node!(self.arena, Parser::Cat,
+                    self.arena[nodeid].left = add_node!(self, Parser::Cat,
                                                         self.derive(node.left, &token), node.right);
                     self.arena[nodeid].right = self.derive(node.right, &token);
                 } else {
@@ -103,7 +118,7 @@ impl<T: Siaa> Grammar<T> {
 
             // Dc(re1 | re2) = Dc(re1) | Dc(re2)
             Parser::Alt | Parser::Cat | Parser::Rep => {
-                let newparser = self.arena.add(Parser::Laz(token.clone()));
+                let newparser = self.add(Parser::Laz(token.clone()));
                 self.arena[newparser].left = nodeid;
                 newparser
             }
