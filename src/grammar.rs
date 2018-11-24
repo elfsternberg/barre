@@ -30,6 +30,40 @@ macro_rules! add_node {
 
 
 impl<T: Siaa> Grammar<T> {
+    fn force(&mut self, nodeid: NodeId, parent: NodeId, token: &T) -> NodeId {
+        let node = &self.arena[parent].clone();
+
+        let replacement = match node.data {
+            // Dc(re1 | re2) = Dc(re1) | Dc(re2)
+            Parser::Alt => {
+                add_node!(self.arena, Parser::Alt,
+                          self.derive(node.left, &token),
+                          self.derive(node.right, &token))
+            }
+            
+            // Dc(L ○ R) = Dc(L) ○ R if L does not contain the empty string
+            // Dc(L ○ R) = Dc(L) ○ R ∪ Dc(R) if L contains the empty string
+            Parser::Cat => {
+                let lhs = add_node!(self.arena, Parser::Cat, self.derive(node.left, &token), node.right);
+                if self.nullable(node.left) {
+                    add_node!(self.arena, Parser::Alt, lhs, self.derive(node.right, &token))
+                } else {
+                    lhs
+                }
+            }
+            
+            // Dc(re*) = Dc(re) re*
+            Parser::Rep => {
+                add_node!(self.arena, Parser::Cat, self.derive(node.left, &token), parent)
+            }
+            
+            _ => panic!("Force called on unambiguous node."),
+        };
+
+        replacement
+    }
+        
+
     fn get_next_derivative(&mut self, nodeid: NodeId, token: &T) -> NodeId {
         let node = &self.arena[nodeid].clone();
 
@@ -51,30 +85,18 @@ impl<T: Siaa> Grammar<T> {
             }
 
             // Dc(re1 | re2) = Dc(re1) | Dc(re2)
-            Parser::Alt => {
-                add_node!(self.arena, Parser::Alt,
-                          self.derive(node.left, &token),
-                          self.derive(node.right, &token))
+            Parser::Alt | Parser::Cat | Parser::Rep => {
+                let newparser = self.arena.add(Parser::Laz(token.clone()));
+                self.arena[newparser].left = nodeid;
+                newparser
             }
 
-            // Dc(L ○ R) = Dc(L) ○ R if L does not contain the empty string
-            // Dc(L ○ R) = Dc(L) ○ R ∪ Dc(R) if L contains the empty string
-            Parser::Cat => {
-                let lhs = add_node!(self.arena, Parser::Cat, self.derive(node.left, &token), node.right);
-                if self.nullable(node.left) {
-                    add_node!(self.arena, Parser::Alt, lhs, self.derive(node.right, &token))
-                } else {
-                    lhs
-                }
-            }
-
-            // Dc(re*) = Dc(re) re*
-            Parser::Rep => {
-                add_node!(self.arena, Parser::Cat, self.derive(node.left, &token), nodeid)
+            Parser::Laz(ref c) => {
+                self.force(nodeid, node.left, c)
             }
         }
     }
-
+    
     fn derive(&mut self, nodeid: NodeId, token: &T) -> NodeId {
         // If we have already seen this node, go get it and process it.
         
@@ -87,8 +109,8 @@ impl<T: Siaa> Grammar<T> {
         next_derivative
     }
 
-    fn nullable(&self, nodeid: NodeId) -> bool {
-        let node = &self.arena[nodeid];
+    fn nullable(&mut self, nodeid: NodeId) -> bool {
+        let node = &self.arena[nodeid].clone();
 
         match node.data {
             Parser::Emp => false,
@@ -97,6 +119,10 @@ impl<T: Siaa> Grammar<T> {
             Parser::Alt => self.nullable(node.left) || self.nullable(node.right),
             Parser::Cat => self.nullable(node.left) && self.nullable(node.right),
             Parser::Rep => true,
+            Parser::Laz(ref c) => {
+                let fnid = self.force(nodeid, node.left, c);
+                self.nullable(fnid)
+            }
         }
     }
 
@@ -107,6 +133,7 @@ impl<T: Siaa> Grammar<T> {
         let mut current_node = start;
         let mut items = items.peekable();
         loop {
+            println!("{:?}", self.arena);
             match items.next() {
                 // If there is no next item and we are at a place where the empty string
                 // (Epsilon, not the empty pattern!) *could* be a valid match, return

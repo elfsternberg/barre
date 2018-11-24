@@ -29,5 +29,6 @@ pub enum Parser<T: Siaa>
     Alt,
     Cat,
     Rep,
+    Laz(T),
 }
 
