@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use std::iter::Peekable;
 use types::{Parser, Siaa};
-use arena::{Arena, Node, NodeId};
+use arena::{Arena, NodeId};
 
 pub struct Grammar<T: Siaa> {
     pub arena: Arena<Parser<T>>,
@@ -11,7 +10,15 @@ pub struct Grammar<T: Siaa> {
 }
 
 macro_rules! add_node {
-    ( $source:ident, $par:ident, $lhs:expr, $rhs:expr ) => {
+    ( $source:expr, $par:expr, $lhs:expr ) => {
+        {
+            let newparser = $source.add($par);
+            $source[newparser].left = $lhs;
+            newparser
+        }
+    };
+
+    ( $source:expr, $par:expr, $lhs:expr, $rhs:expr ) => {
         {
             let newparser = $source.add($par);
             $source[newparser].left = $lhs;
@@ -45,26 +52,17 @@ impl<T: Siaa> Grammar<T> {
 
             // Dc(re1 | re2) = Dc(re1) | Dc(re2)
             Parser::Alt => {
-                let alt = self.arena.add(Parser::Alt);
-                self.arena[alt].left = self.derive(node.left, &token);
-                self.arena[alt].right = self.derive(node.right, &token);
-                alt
+                add_node!(self.arena, Parser::Alt,
+                          self.derive(node.left, &token),
+                          self.derive(node.right, &token))
             }
 
             // Dc(L ○ R) = Dc(L) ○ R if L does not contain the empty string
             // Dc(L ○ R) = Dc(L) ○ R ∪ Dc(R) if L contains the empty string
             Parser::Cat => {
-                let dcl = self.derive(node.left, &token);
-                let lhs = self.arena.add(Parser::Cat);
-                self.arena[lhs].left = dcl;
-                self.arena[lhs].right = node.right;
-
+                let lhs = add_node!(self.arena, Parser::Cat, self.derive(node.left, &token), node.right);
                 if self.nullable(node.left) {
-                    let dcr = self.derive(node.right, &token);
-                    let nca = self.arena.add(Parser::Alt);
-                    self.arena[nca].left = lhs;
-                    self.arena[nca].right = dcr;
-                    nca
+                    add_node!(self.arena, Parser::Alt, lhs, self.derive(node.right, &token))
                 } else {
                     lhs
                 }
@@ -72,11 +70,7 @@ impl<T: Siaa> Grammar<T> {
 
             // Dc(re*) = Dc(re) re*
             Parser::Rep => {
-                let rep = self.arena.add(Parser::Cat);
-                let car = self.derive(node.left, &token);
-                self.arena[rep].left = car;
-                self.arena[rep].right = nodeid;
-                rep
+                add_node!(self.arena, Parser::Cat, self.derive(node.left, &token), nodeid)
             }
         }
     }

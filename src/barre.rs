@@ -10,21 +10,9 @@ use types::{Siaa, Parser};
 pub struct Barre<T:Siaa>
 {
     arena: Arena<Parser<T>>,
-    memo: HashMap<(NodeId, T), NodeId>,
     start: NodeId,
     empty: NodeId,
     epsilon: NodeId,
-}
-
-macro_rules! add_node {
-    ( $par:ident, $lhs:expr, $rhs:expr ) => {
-        {
-            let newparser = self.arena.add($par);
-            self.arena[newparser].left = $lhs;
-            self.arena[newparser].right = $rhs;
-            newparser
-        }
-    };
 }
 
 impl<T: Siaa> Barre<T>
@@ -32,7 +20,6 @@ impl<T: Siaa> Barre<T>
     pub fn from_arena(arena: Arena<Parser<T>>, start: NodeId) -> Barre<T> {
         Barre::<T> {
             arena: arena,
-            memo: HashMap::new(),
             start: start,
             epsilon: 2,
             empty: 1,
