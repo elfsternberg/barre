@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use types::{Parser, Siaa};
-use arena::{Arena, NodeId};
+use arena::{Arena, Node, NodeId};
 
 pub struct Grammar<T: Siaa> {
     pub arena: Arena<Parser<T>>,
@@ -21,8 +21,10 @@ macro_rules! add_node {
     ( $source:expr, $par:expr, $lhs:expr, $rhs:expr ) => {
         {
             let newparser = $source.add($par);
-            $source[newparser].left = $lhs;
-            $source[newparser].right = $rhs;
+            let car = $lhs;
+            let cdr = $rhs;
+            $source[newparser].left = car;
+            $source[newparser].right = cdr;
             newparser
         }
     };
@@ -33,37 +35,52 @@ impl<T: Siaa> Grammar<T> {
     fn force(&mut self, nodeid: NodeId, parent: NodeId, token: &T) -> NodeId {
         let node = &self.arena[parent].clone();
 
-        let replacement = match node.data {
-            // Dc(re1 | re2) = Dc(re1) | Dc(re2)
+        let replacement = {
+            match node.data {
+                Parser::Alt => Node::new(Parser::Alt),
+                Parser::Cat => {
+                    Node::new(if self.nullable(node.left) {
+                        Parser::Alt
+                    } else {
+                        Parser::Cat
+                    })
+                },
+                Parser::Rep => Node::new(Parser::Cat),
+
+                _ => panic!("Force called on unambiguous node."),
+            }
+        };
+        
+        self.arena[nodeid] = replacement;
+
+        match node.data {
             Parser::Alt => {
-                add_node!(self.arena, Parser::Alt,
-                          self.derive(node.left, &token),
-                          self.derive(node.right, &token))
-            }
-            
-            // Dc(L ○ R) = Dc(L) ○ R if L does not contain the empty string
-            // Dc(L ○ R) = Dc(L) ○ R ∪ Dc(R) if L contains the empty string
-            Parser::Cat => {
-                let lhs = add_node!(self.arena, Parser::Cat, self.derive(node.left, &token), node.right);
-                if self.nullable(node.left) {
-                    add_node!(self.arena, Parser::Alt, lhs, self.derive(node.right, &token))
-                } else {
-                    lhs
-                }
-            }
-            
-            // Dc(re*) = Dc(re) re*
+                self.arena[nodeid].left = self.derive(node.left, &token);
+                self.arena[nodeid].right = self.derive(node.right, &token);
+            },
+
             Parser::Rep => {
-                add_node!(self.arena, Parser::Cat, self.derive(node.left, &token), parent)
-            }
-            
+                self.arena[nodeid].left = self.derive(node.left, &token);
+                self.arena[nodeid].right = parent;
+            },
+
+            Parser::Cat => {
+                if self.nullable(node.left) {
+                    self.arena[nodeid].left = add_node!(self.arena, Parser::Cat,
+                                                        self.derive(node.left, &token), node.right);
+                    self.arena[nodeid].right = self.derive(node.right, &token);
+                } else {
+                    self.arena[nodeid].left = self.derive(node.left, &token);
+                    self.arena[nodeid].right = node.right;
+                }
+            },
+
             _ => panic!("Force called on unambiguous node."),
         };
 
-        replacement
+        nodeid
     }
-        
-
+                    
     fn get_next_derivative(&mut self, nodeid: NodeId, token: &T) -> NodeId {
         let node = &self.arena[nodeid].clone();
 
@@ -92,7 +109,8 @@ impl<T: Siaa> Grammar<T> {
             }
 
             Parser::Laz(ref c) => {
-                self.force(nodeid, node.left, c)
+                let nnid = self.force(nodeid, node.left, c);
+                self.derive(nnid, token)
             }
         }
     }
