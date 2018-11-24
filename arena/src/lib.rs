@@ -3,7 +3,7 @@ use std::ops::IndexMut;
 
 pub type NodeId = usize;
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Node<T> {
     pub left: NodeId,
     pub right: NodeId,
@@ -20,7 +20,7 @@ impl<T> Node<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Arena<T> {
     arena: Vec<Node<T>>
 }
