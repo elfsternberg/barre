@@ -36,7 +36,7 @@ impl<T: Siaa> Barre<T>
         Barre::from_arena(init_barre_arena(), 1)
     }
 
-    pub fn match_re<I>(&mut self, items: &mut I) -> bool
+    pub fn parse<I>(&mut self, items: &mut I) -> bool
     where
         I: Iterator<Item = T>,
     {
@@ -49,7 +49,9 @@ impl<T: Siaa> Barre<T>
             epsilon: self.epsilon,
         };
 
-        grammar.parse(items, self.start)
+        let res = grammar.parse(items, self.start);
+        println!("{:?}", grammar.delta);
+        res
     }
 }
 
@@ -73,12 +75,24 @@ mod tests {
                 let matches = mkpair![$(($l, $r)),*];
                 for pair in matches {
                     println!("{:?} {:?}", &pair.0, &pair.1);
-                    assert!($pt.match_re(&mut pair.0.chars()) == pair.1);
+                    assert!($pt.parse(&mut pair.0.chars()) == pair.1);
                 }
             }
         }
     }
 
+    #[test]
+    fn show_your_work() {
+        let lang = alt!(
+            cat!(tok('f'), tok('o'), tok('o')),
+            cat!(tok('b'), tok('a'), tok('r')),
+            cat!(tok('b'), tok('a'), tok('z'))
+        );
+        let mut barre = Barre::from_language(&lang);
+        barre.parse(&mut String::from("bar").chars());
+        assert!(true);
+    }
+    
     #[test]
     fn just_a_token() {
         let lang = tok('a');

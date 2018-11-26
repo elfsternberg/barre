@@ -7,7 +7,7 @@ pub fn init_barre_arena<T: Siaa>() -> Arena<Parser<T>>
     let mut arena = Arena::new();
     let _ = arena.add(Parser::Emp);
     let _ = arena.add(Parser::Emp);
-    let _ = arena.add(Parser::Eps(T::default()));
+    let _ = arena.add(Parser::Eps);
     arena
 }
 
@@ -18,7 +18,7 @@ pub fn language_to_arena<T: Siaa>(lang: &Language<T>) -> (Arena<Parser<T>>, Node
     fn language_handler<T: Siaa>(lang: &Language<T>, r: &mut Arena<Parser<T>>) -> NodeId
     {
         match lang {
-            Language::Epsilon => 2,
+            Language::Epsilon => r.add(Parser::Eps),
             
             Language::Token(ref t) => {
                 r.add(Parser::Tok(t.0.clone()))

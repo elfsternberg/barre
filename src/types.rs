@@ -24,7 +24,7 @@ impl<T> Siaa for T where
 pub enum Parser<T: Siaa>
 {
     Emp,
-    Eps(T),
+    Eps,
     Tok(T),
     Alt,
     Cat,
