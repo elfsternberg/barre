@@ -123,9 +123,7 @@ impl<T: Siaa> Grammar<T> {
 
             // Dc(re1 | re2) = Dc(re1) | Dc(re2)
             Parser::Alt | Parser::Cat | Parser::Rep => {
-                let newparser = self.add(Parser::Laz(token.clone()));
-                self.arena[newparser].left = nodeid;
-                newparser
+                add_node!(self, Parser::Laz(token.clone()), nodeid)
             }
 
             Parser::Laz(ref c) => {
