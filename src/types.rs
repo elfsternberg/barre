@@ -11,24 +11,21 @@ pub trait Siaa:
 
 impl<T> Siaa for T where
     T: std::clone::Clone
-        + std::cmp::PartialEq
-        + std::cmp::Eq
-        + std::fmt::Debug
-        + std::fmt::Display
-        + std::default::Default
-        + std::hash::Hash
-{
-}
+    + std::cmp::PartialEq
+    + std::cmp::Eq
+    + std::fmt::Debug
+    + std::fmt::Display
+    + std::default::Default
+    + std::hash::Hash
+{}
 
 #[derive(Clone, Copy, Debug)]
-pub enum Parser<T: Siaa>
-{
+pub enum Parser<T: Siaa> {
     Emp,
-    Eps,
+    Eps(T),
     Tok(T),
     Alt,
     Cat,
-    Rep,
+    //    Rep,
     Laz(T),
 }
-
