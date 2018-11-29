@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "cargo-clippy", allow(redundant_field_names))]
+
 extern crate arena;
 extern crate dot;
 

@@ -29,13 +29,11 @@ pub fn language_to_arena<T: Siaa>(lang: &Language<T>) -> (Arena<Parser<T>>, Node
                 r[ent].left = language_handler(&node.0, r);
                 r[ent].right = language_handler(&node.1, r);
                 ent
-            },
-
-            //             Language::Repeat(ref node) => {
-            //                 let ent = r.add(Parser::Rep);
-            //                 r[ent].left = language_handler(&node.0, r);
-            //                 ent
-            //             }
+            } //             Language::Repeat(ref node) => {
+              //                 let ent = r.add(Parser::Rep);
+              //                 r[ent].left = language_handler(&node.0, r);
+              //                 ent
+              //             }
         }
     }
 

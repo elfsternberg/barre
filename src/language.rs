@@ -73,7 +73,7 @@ macro_rules! cat {
     ($l:expr, $r:expr) => {
         $crate::language::cat($l, $r)
     };
-    
+
     ($l:expr, $r:expr, $($x:expr),*) => {
         $crate::language::cat($l, cat!($r, $($x),*))
     };

@@ -40,7 +40,12 @@ impl<T: Siaa> Barre<T> {
             empty: self.empty,
         };
 
-        let res = grammar.parse(items, self.start);
-        res
+        grammar.parse(items, self.start)
+    }
+}
+
+impl<T:Siaa> Default for Barre<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
