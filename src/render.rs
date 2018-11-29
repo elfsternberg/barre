@@ -1,18 +1,13 @@
-#[allow(unused_imports)]
 use arena::{Arena, NodeId};
-#[allow(unused_imports)]
-use dot;
-#[allow(unused_imports)]
-use std::borrow::Cow;
-#[allow(unused_imports)]
-use std::fs::File;
-#[allow(unused_imports)]
-use std::io::Write;
-#[allow(unused_imports)]
 use types::{Parser, Siaa};
 
 #[cfg(feature="render_trees")]
 pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) {
+    use std::io::Write;
+    use std::fs::File;
+    use dot;
+    use std::borrow::Cow;
+    
     type Nd = usize;
     type Ed<'a> = &'a (usize, usize);
 
@@ -133,7 +128,12 @@ pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) 
     g.render_to(&mut f)
 }
 
+// Using inline here to tell rustc that, if it encounters this function
+// render_trees is not enabled, inline it so that not even the
+// function call is costed.
+
 #[cfg(not(feature="render_trees"))]
+#[inline]
 pub fn render<T: Siaa>(_arena: &Arena<Parser<T>>, _start: NodeId, _filename: &str) {
     // No-op
 }
