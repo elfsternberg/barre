@@ -5,6 +5,10 @@ authors = ["Elf M. Sternberg <elf.sternberg@gmail.com>"]
 description = "An implementation of Matt Might's Parsing With Derivatives."
 # edition = "2018"
 
+[features]
+default = []
+render_trees = []
+
 [dependencies]
 arena = { path = "arena" }
 dot = "0.1.4"

@@ -11,7 +11,7 @@ use std::io::Write;
 #[allow(unused_imports)]
 use types::{Parser, Siaa};
 
-#[cfg(render_trees)]
+#[cfg(feature="render_trees")]
 pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) {
     type Nd = usize;
     type Ed<'a> = &'a (usize, usize);
@@ -27,6 +27,42 @@ pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) 
         graph: Graph,
     }
 
+    macro_rules! pn0 {
+        ($self: expr, $node:expr, $text:expr) => {
+            {
+                $self.graph.nodes.push($text);
+                $self.graph.nodes.len() - 1
+            }
+        }
+    }
+
+    macro_rules! pn1 {
+        ($self: expr, $node:expr, $text:expr) => {
+            {
+                $self.graph.nodes.push($text);
+                let pos = $self.graph.nodes.len() - 1;
+                let child1 = $self.handler($node.left);
+                $self.graph.edges.push((pos, child1));
+                pos
+            }
+        }
+    }
+
+    macro_rules! pn2 {
+        ($self: expr, $node:expr, $text:expr) => {
+            {
+                $self.graph.nodes.push($text);
+                let pos = $self.graph.nodes.len() - 1;
+                let child1 = $self.handler($node.left);
+                let child2 = $self.handler($node.right);
+                $self.graph.edges.push((pos, child1));
+                $self.graph.edges.push((pos, child2));
+                pos
+            }
+        }
+    }
+
+    
     impl<'a, T: Siaa> GrammarRenderer<'a, T> {
         pub fn new(grammar: &'a Arena<Parser<T>>, start: NodeId) -> GrammarRenderer<T> {
             GrammarRenderer {
@@ -43,61 +79,14 @@ pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) 
             let node = self.grammar[nodeid].clone();
 
             match &node.data {
-                Parser::Emp => {
-                    self.graph.nodes.push("Emp".to_owned());
-                    self.graph.nodes.len() - 1
-                }
-
-                Parser::Tok(ref c) => {
-                    self.graph.nodes.push(format!("'{:?}'", c));
-                    self.graph.nodes.len() - 1
-                }
-
-                Parser::Eps(ref c) => {
-                    self.graph.nodes.push(format!("e:{:?}", c));
-                    self.graph.nodes.len() - 1
-                }
-
-                Parser::Alt => {
-                    self.graph.nodes.push(format!("Alt"));
-                    let pos = self.graph.nodes.len() - 1;
-                    let child1 = self.handler(node.left);
-                    let child2 = self.handler(node.right);
-                    self.graph.edges.push((pos, child1));
-                    self.graph.edges.push((pos, child2));
-                    pos
-                }
-
-                Parser::Cat => {
-                    self.graph.nodes.push(format!("Cat"));
-                    let pos = self.graph.nodes.len() - 1;
-                    let child1 = self.handler(node.left);
-                    let child2 = self.handler(node.right);
-                    self.graph.edges.push((pos, child1));
-                    self.graph.edges.push((pos, child2));
-                    pos
-                }
-
-                Parser::Laz(ref c) => {
-                    self.graph.nodes.push(format!("l:{:?}", c));
-                    let pos = self.graph.nodes.len() - 1;
-                    let child1 = self.handler(node.left);
-                    self.graph.edges.push((pos, child1));
-                    pos
-                }
-
-                Parser::Del => {
-                    self.graph.nodes.push(format!("Del"));
-                    let pos = self.graph.nodes.len() - 1;
-                    let child1 = self.handler(node.left);
-                    self.graph.edges.push((pos, child1));
-                    pos
-                }
-
-                Parser::Unk => {
-                    self.graph.nodes.push("Unk".to_owned());
-                    self.graph.nodes.len() - 1
-                }
+                Parser::Emp =>        pn0!(self, node, format!("{:4} Emp", nodeid)),
+                Parser::Tok(ref c) => pn0!(self, node, format!("{:4} ':{:?}", nodeid, c)),
+                Parser::Eps(ref c) => pn0!(self, node, format!("{:4} e:{:?}", nodeid, c)),
+                Parser::Alt =>        pn2!(self, node, format!("{:4} Alt", nodeid)),
+                Parser::Cat =>        pn2!(self, node, format!("{:4} Cat", nodeid)),
+                Parser::Laz(ref c) => pn1!(self, node, format!("{:4} L:{:?}", nodeid, c)),
+                Parser::Del =>        pn1!(self, node, format!("{:4} Del", nodeid)),
+                Parser::Unk =>        pn0!(self, node, format!("{:4} Unk", nodeid)),
             }
         }
 
@@ -144,7 +133,7 @@ pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) 
     g.render_to(&mut f)
 }
 
-#[cfg(not(render_trees))]
+#[cfg(not(feature="render_trees"))]
 pub fn render<T: Siaa>(_arena: &Arena<Parser<T>>, _start: NodeId, _filename: &str) {
     // No-op
 }

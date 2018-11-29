@@ -131,7 +131,6 @@ impl<T: Siaa> Grammar<T> {
     }
 
     fn derive(&mut self, nodeid: NodeId, token: &T) -> NodeId {
-        // If we have already seen this node, go get it and process it.
         {
             if let Some(cached_node) = self.memo.get(&(nodeid, token.clone())) {
                 return *cached_node;
@@ -142,21 +141,13 @@ impl<T: Siaa> Grammar<T> {
             let node = &self.arena[nodeid].clone();
 
             match node.data {
-                // Dc(∅) = ∅
                 Parser::Emp => self.empty,
-
-                // Dc(ε) = ∅
                 Parser::Eps(_) => self.empty,
-
                 Parser::Del => self.empty,
 
-                // Dc(c) = ε if c = c'
-                // Dc(c') = ∅ if c ≠ c'
-                Parser::Tok(ref t) => iff!(
-                    *t == *token,
-                    self.add(Parser::Eps(token.clone())),
-                    self.empty
-                ),
+                Parser::Tok(ref t) => {
+                    iff!(*t == *token, self.add(Parser::Eps(token.clone())), self.empty)
+                },
 
                 Parser::Alt | Parser::Cat => add_node!(self, Parser::Laz(token.clone()), nodeid),
 
@@ -252,13 +243,14 @@ impl<T: Siaa> Grammar<T> {
     where
         I: Iterator<Item = T>,
     {
-        let mut current_node = start;
+        let mut nodeid = start;
         let mut items = items.peekable();
         let mut count = 0;
+        println!("A1: {:?} {:?}", self.arena, nodeid);
         loop {
             render(
                 &self.arena,
-                current_node,
+                nodeid,
                 &format!("output-{:?}.dot", count),
             );
             count += 1;
@@ -267,20 +259,19 @@ impl<T: Siaa> Grammar<T> {
                 // (Epsilon, not the empty pattern!) *could* be a valid match, return
                 // true.
                 None => {
-                    break if self.nullable(current_node) {
-                        render(
-                            &self.arena,
-                            current_node,
-                            &format!("output-{:?}.dot", count),
-                        );
-                        Some(self.parse_tree(current_node))
+                    render(&self.arena, nodeid, &format!("output-{:?}.dot", count));
+                    println!("Sending to breaker: {:?}", nodeid);
+                    let ret = self.nullable(nodeid);
+                    render(&self.arena, nodeid, &format!("output-{:?}.dot", count + 1));
+                    break if ret {
+                        Some(self.parse_tree(nodeid))
                     } else {
                         None
                     }
                 }
 
                 Some(ref c) => {
-                    let np = self.derive(current_node, c);
+                    let np = self.derive(nodeid, c);
                     let nl = &self.arena[np].data.clone();
                     match nl {
                         Parser::Emp => break None,
@@ -293,7 +284,7 @@ impl<T: Siaa> Grammar<T> {
                         // we hit Empty or Epsilon, and then we're
                         // done.
                         _ => {
-                            current_node = np;
+                            nodeid = np;
                         }
                     }
                 }
