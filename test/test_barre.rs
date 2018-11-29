@@ -63,12 +63,12 @@ macro_rules! testpat {
 
     #[test]
     fn just_a_cat() {
-        let lang = cat!(tok('a'), tok('b'));
+        let lang = cat!(tok('a'), tok('b'), tok('c'));
         let mut barre = Barre::from_language(&lang);
-        testpat!(barre; [
-            ("ab", None), ("", None), ("b", None),
-            ("aab", None), ("aba", None), ("a", None)
-        ]);
+        testpat!(barre; [("abc", None)]);
+        //a, ("", None), ("b", None),
+        //("aab", None), ("aba", None), ("a", None)
+        // ]);
     }
     
     //     #[test]

@@ -2,6 +2,7 @@ use arena::{Arena, Node, NodeId};
 use std::collections::{HashMap, HashSet};
 use types::{Parser, Siaa};
 use std::hash::Hash;
+use render::render;
 
 pub struct Grammar<T: Siaa> {
     pub arena: Arena<Parser<T>>,
@@ -38,6 +39,12 @@ macro_rules! add_node {
     }};
 }
 
+macro_rules! iff {
+    ($condition: expr, $_true:expr, $_false:expr) => {
+        if $condition { $_true } else { $_false }
+    };
+}
+
 // Using a '+' instead of a '*' in the second expression allows this
 // macro to build code that can be used immutably; without it, the
 // compiler complains that building an empty hashset does not require
@@ -68,16 +75,11 @@ impl<T: Siaa> Grammar<T>
 
     fn force(&mut self, nodeid: NodeId, parent: NodeId, token: &T) -> NodeId {
         let node = &self.arena[parent].clone();
-        //
-        //         // This is a two-step of replacing the lazy node with its
-        //         // ultimate value.  The two-step is necessary because the
-        //         // child nodes will be filled in with a similar recursive
-        //         // process, so the node must be present to be filled in.
-        //
+
         let replacement = {
             match node.data {
                 Parser::Alt => Node::new(Parser::Alt),
-                Parser::Cat => Node::new(Parser::Cat),
+                Parser::Cat => Node::new(Parser::Alt),
                 // Parser::Rep => Node::new(Parser::Cat),
                 _ => panic!("Force called on unambiguous node."),
             }
@@ -87,25 +89,35 @@ impl<T: Siaa> Grammar<T>
 
         match node.data {
             Parser::Alt => {
-                self.arena[nodeid].left = self.derive(node.left, &token);
-                self.arena[nodeid].right = self.derive(node.right, &token);
-            }
-            //
-            //             Parser::Rep => {
-            //                 self.arena[nodeid].left = self.derive(node.left, &token);
-            //                 self.arena[nodeid].right = parent;
-            //             },
-            //
-            Parser::Cat => {
-                if self.nullable(node.left) {
-                    self.arena[nodeid].data = Parser::Alt;
-                    self.arena[nodeid].left = add_node!(self, Parser::Cat,
-                                                        self.derive(node.left, &token), node.right);
-                    self.arena[nodeid].right = self.derive(node.right, &token);
-                } else {
-                    self.arena[nodeid].left = self.derive(node.left, &token);
-                    self.arena[nodeid].right = node.right;
+                let l = self.derive(node.left, &token);
+                let r = self.derive(node.right, &token);
+                if l == self.empty {
+                    self.arena[nodeid] = self.arena[r].clone();
                 }
+                else if r == self.empty {
+                    self.arena[nodeid] = self.arena[l].clone();
+                }
+                else {
+                    self.arena[nodeid].left = self.derive(node.left, &token);
+                    self.arena[nodeid].right = self.derive(node.right, &token);
+                }
+            },
+
+            // Parser::Rep => {
+            //     self.arena[nodeid].left = self.derive(node.left, &token);
+            //     self.arena[nodeid].right = parent;
+            // },
+
+            Parser::Cat => {
+                let l = self.derive(node.left, &token);
+                let r = self.derive(node.right, &token);
+                if l == self.empty || r == self.empty {
+                    return self.empty
+                }
+
+                self.arena[nodeid].left = add_node!(
+                    self, Parser::Cat, add_node!(self, Parser::Del, node.left), r);
+                self.arena[nodeid].right = add_node!(self, Parser::Cat, l, node.right);
             },
             _ => panic!("Force called on a non-lazy node."),
         };
@@ -131,27 +143,24 @@ impl<T: Siaa> Grammar<T>
                 // Dc(ε) = ∅
                 Parser::Eps(_) => self.empty,
 
+                Parser::Del => self.empty,
+
                 // Dc(c) = ε if c = c'
                 // Dc(c') = ∅ if c ≠ c'
                 Parser::Tok(ref t) => {
-                    if *t == *token {
-                        self.add(Parser::Eps(token.clone()))
-                    } else {
-                        self.empty
-                    }
+                    iff!(*t == *token, self.add(Parser::Eps(token.clone())), self.empty)
                 }
 
                 Parser::Alt | Parser::Cat =>
                     add_node!(self, Parser::Laz(token.clone()), nodeid),
 
-                //                // Dc(re1 | re2) = Dc(re1) | Dc(re2)
-                //                Parser::Alt | Parser::Cat | Parser::Rep => {
-                //                    add_node!(self, Parser::Laz(token.clone()), nodeid)
-                //                }
-                //
                 Parser::Laz(ref c) => {
                     let nnid = self.force(nodeid, node.left, c);
                     self.derive(nnid, token)
+                }
+
+                Parser::Unk => {
+                    panic!("Unknown node in derive operation. CANTHAPPEN.");
                 }
             }
         };
@@ -166,6 +175,7 @@ impl<T: Siaa> Grammar<T>
         match node.data {
             Parser::Emp => false,
             Parser::Eps(_) => true,
+            Parser::Del => self.nullable(node.left),
             Parser::Tok(_) => false,
             Parser::Alt => self.nullable(node.left) || self.nullable(node.right),
             Parser::Cat => self.nullable(node.left) && self.nullable(node.right),
@@ -173,6 +183,9 @@ impl<T: Siaa> Grammar<T>
             Parser::Laz(ref c) => {
                 let fnid = self.force(nodeid, node.left, c);
                 self.nullable(fnid)
+            }
+            Parser::Unk => {
+                panic!("Unknown node in nullable operation. CANTHAPPEN.");
             }
         }
     }
@@ -192,6 +205,10 @@ impl<T: Siaa> Grammar<T>
             Parser::Emp => hashset!(),
             Parser::Tok(_) => hashset!(),
             Parser::Eps(ref c) => hashset!(ParseTree::Lit(c.clone())),
+            Parser::Del => {
+                self.parse_tree_inner(memo, node.left)
+            },
+                
             Parser::Alt => {
                 let p1 = self.parse_tree_inner(memo, node.left);
                 p1.union(&self.parse_tree_inner(memo, node.right)).into_iter().cloned().collect()
@@ -211,6 +228,9 @@ impl<T: Siaa> Grammar<T>
                 let fnid = self.force(nodeid, node.left, c);
                 self.parse_tree_inner(memo, fnid)
             }
+            Parser::Unk => {
+                panic!("Unknown node in parsetree operation. CANTHAPPEN");
+            }
         }
     }
 
@@ -225,13 +245,18 @@ impl<T: Siaa> Grammar<T>
     {
         let mut current_node = start;
         let mut items = items.peekable();
+        let mut count = 0;
         loop {
+            render(&self.arena, current_node, &format!("output-{:?}.dot", count));
+            count = count + 1;
+
             match items.next() {
                 // If there is no next item and we are at a place where the empty string
                 // (Epsilon, not the empty pattern!) *could* be a valid match, return
                 // true.
                 None => {
                     break if self.nullable(current_node) {
+                        render(&self.arena, current_node, &format!("output-{:?}.dot", count));
                         Some(self.parse_tree(current_node))
                     } else {
                         None
@@ -260,3 +285,4 @@ impl<T: Siaa> Grammar<T>
         }
     }
 }
+

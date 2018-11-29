@@ -1,4 +1,5 @@
 extern crate arena;
+extern crate dot;
 
 mod types;
 
@@ -10,3 +11,5 @@ pub mod grammar;
 
 pub mod barre;
 mod builder;
+
+pub mod render;

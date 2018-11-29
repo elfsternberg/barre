@@ -21,8 +21,10 @@ impl<T> Siaa for T where
 
 #[derive(Clone, Copy, Debug)]
 pub enum Parser<T: Siaa> {
+    Unk,
     Emp,
     Eps(T),
+    Del,
     Tok(T),
     Alt,
     Cat,
