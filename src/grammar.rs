@@ -1,4 +1,4 @@
-use arena::{Arena, Node, NodeId};
+use arena::{Arena, NodeId};
 use render::render;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -25,6 +25,10 @@ where
 // the borrow rules work correctly.  Also: A lot easier.
 
 macro_rules! add_node {
+    ( $source:expr, $par:expr ) => {{
+        $source.add($par)
+    }};
+
     ( $source:expr, $par:expr, $lhs:expr ) => {{
         let newparser = $source.add($par);
         $source.arena[newparser].left = $lhs;
@@ -78,53 +82,38 @@ impl<T: Siaa> Grammar<T> {
         self.arena.add(parser)
     }
 
-    fn force(&mut self, nodeid: NodeId, parent: NodeId, token: &T) -> NodeId {
-        let node = &self.arena[parent].clone();
+    fn get_lr(&self, nodeid: NodeId) -> (NodeId, NodeId) {
+        let node = &self.arena[nodeid];
+        (node.left, node.right)
+    }
 
-        let replacement = {
-            match node.data {
-                Parser::Alt => Node::new(Parser::Alt),
-                Parser::Cat => Node::new(Parser::Alt),
-                // Parser::Rep => Node::new(Parser::Cat),
-                _ => panic!("Force called on unambiguous node."),
-            }
-        };
+    fn derive_cat(&mut self, nodeid: NodeId, token: &T) -> NodeId {
+        let (node_left, node_right) = self.get_lr(nodeid);
+        let targid = add_node!(self, Parser::Ukn);
 
-        self.arena[nodeid] = replacement;
+        let l = self.derive(node_left, &token);
+        let r = self.derive(node_right, &token);
+        self.arena[targid].left = add_node!(self, Parser::Cat, add_node!(self, Parser::Del, node_left), r);
+        self.arena[targid].right = add_node!(self, Parser::Cat, l, node_right);
+        self.arena[targid].data = Parser::Alt;
+        targid
+    }
 
-        match node.data {
-            Parser::Alt => {
-                let l = self.derive(node.left, &token);
-                let r = self.derive(node.right, &token);
-                if l == self.empty {
-                    self.arena[nodeid] = self.arena[r].clone();
-                } else if r == self.empty {
-                    self.arena[nodeid] = self.arena[l].clone();
-                } else {
-                    self.arena[nodeid].left = self.derive(node.left, &token);
-                    self.arena[nodeid].right = self.derive(node.right, &token);
-                }
-            }
-
-            // Parser::Rep => {
-            //     self.arena[nodeid].left = self.derive(node.left, &token);
-            //     self.arena[nodeid].right = parent;
-            // },
-            Parser::Cat => {
-                let l = self.derive(node.left, &token);
-                let r = self.derive(node.right, &token);
-                self.arena[nodeid].left = add_node!(
-                    self,
-                    Parser::Cat,
-                    add_node!(self, Parser::Del, node.left),
-                    r
-                );
-                self.arena[nodeid].right = add_node!(self, Parser::Cat, l, node.right);
-            }
-            _ => panic!("Force called on a non-lazy node."),
-        };
-
-        nodeid
+    fn derive_alt(&mut self, nodeid: NodeId, token: &T) -> NodeId {
+        let (node_left, node_right) = self.get_lr(nodeid);
+        let targid = add_node!(self, Parser::Ukn);
+        let l = self.derive(node_left, &token);
+        let r = self.derive(node_right, &token);
+        if l == self.empty {
+            self.arena[targid] = self.arena[r].clone();
+        } else if r == self.empty {
+            self.arena[targid] = self.arena[l].clone();
+        } else {
+            self.arena[targid].left = self.derive(node_left, &token);
+            self.arena[targid].right = self.derive(node_right, &token);
+            self.arena[targid].data = Parser::Alt;
+        }
+        targid
     }
 
     fn derive(&mut self, nodeid: NodeId, token: &T) -> NodeId {
@@ -142,19 +131,12 @@ impl<T: Siaa> Grammar<T> {
                 Parser::Eps(_) => self.empty,
                 Parser::Del => self.empty,
 
-                Parser::Tok(ref t) => {
-                    iff!(*t == *token, self.add(Parser::Eps(token.clone())), self.empty)
-                },
+                Parser::Tok(ref t) => iff!(*t == *token, self.add(Parser::Eps(token.clone())), self.empty),
 
-                Parser::Alt | Parser::Cat => add_node!(self, Parser::Laz(token.clone()), nodeid),
-
-                Parser::Laz(ref c) => {
-                    let nnid = self.force(nodeid, node.left, c);
-                    self.derive(nnid, token)
-                }
-
-                Parser::Unk => {
-                    panic!("Unknown node in derive operation. CANTHAPPEN.");
+                Parser::Alt => self.derive_alt(nodeid, token),
+                Parser::Cat => self.derive_cat(nodeid, token),
+                Parser::Ukn => {
+                    panic!("Uknnown node in derive operation. CANTHAPPEN.");
                 }
             }
         };
@@ -174,21 +156,13 @@ impl<T: Siaa> Grammar<T> {
             Parser::Alt => self.nullable(node.left) || self.nullable(node.right),
             Parser::Cat => self.nullable(node.left) && self.nullable(node.right),
             //             Parser::Rep => true,
-            Parser::Laz(ref c) => {
-                let fnid = self.force(nodeid, node.left, c);
-                self.nullable(fnid)
-            }
-            Parser::Unk => {
-                panic!("Unknown node in nullable operation. CANTHAPPEN.");
+            Parser::Ukn => {
+                panic!("Uknnown node in nullable operation. CANTHAPPEN.");
             }
         }
     }
 
-    pub fn parse_tree_inner(
-        &mut self,
-        memo: &mut ExtractionType<T>,
-        nodeid: NodeId,
-    ) -> HashSet<ParseTree<T>> {
+    pub fn parse_tree_inner(&mut self, memo: &mut ExtractionType<T>, nodeid: NodeId) -> HashSet<ParseTree<T>> {
         if let Some(cached_result) = memo.get(&nodeid) {
             return cached_result.clone();
         };
@@ -207,9 +181,7 @@ impl<T: Siaa> Grammar<T> {
 
             Parser::Alt => {
                 let p1 = self.parse_tree_inner(memo, node.left);
-                p1.union(&self.parse_tree_inner(memo, node.right))
-                    .cloned()
-                    .collect()
+                p1.union(&self.parse_tree_inner(memo, node.right)).cloned().collect()
             }
             Parser::Cat => {
                 let mut ret = HashSet::new();
@@ -221,12 +193,8 @@ impl<T: Siaa> Grammar<T> {
                 }
                 ret
             }
-            Parser::Laz(ref c) => {
-                let fnid = self.force(nodeid, node.left, c);
-                self.parse_tree_inner(memo, fnid)
-            }
-            Parser::Unk => {
-                panic!("Unknown node in parsetree operation. CANTHAPPEN");
+            Parser::Ukn => {
+                panic!("Uknnown node in parsetree operation. CANTHAPPEN");
             }
         }
     }
@@ -245,11 +213,7 @@ impl<T: Siaa> Grammar<T> {
         let mut count = 0;
         println!("A1: {:?} {:?}", self.arena, nodeid);
         loop {
-            render(
-                &self.arena,
-                nodeid,
-                &format!("output-{:?}.dot", count),
-            );
+            render(&self.arena, nodeid, &format!("output-{:?}.dot", count));
             count += 1;
             match items.next() {
                 // If there is no next item and we are at a place where the empty string
@@ -260,11 +224,7 @@ impl<T: Siaa> Grammar<T> {
                     println!("Sending to breaker: {:?}", nodeid);
                     let ret = self.nullable(nodeid);
                     render(&self.arena, nodeid, &format!("output-{:?}.dot", count + 1));
-                    break if ret {
-                        Some(self.parse_tree(nodeid))
-                    } else {
-                        None
-                    }
+                    break if ret { Some(self.parse_tree(nodeid)) } else { None };
                 }
 
                 Some(ref c) => {

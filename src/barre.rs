@@ -44,7 +44,7 @@ impl<T: Siaa> Barre<T> {
     }
 }
 
-impl<T:Siaa> Default for Barre<T> {
+impl<T: Siaa> Default for Barre<T> {
     fn default() -> Self {
         Self::new()
     }

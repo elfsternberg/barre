@@ -1,13 +1,13 @@
 use arena::{Arena, NodeId};
 use types::{Parser, Siaa};
 
-#[cfg(feature="render_trees")]
+#[cfg(feature = "render_trees")]
 pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) {
-    use std::io::Write;
-    use std::fs::File;
     use dot;
     use std::borrow::Cow;
-    
+    use std::fs::File;
+    use std::io::Write;
+
     type Nd = usize;
     type Ed<'a> = &'a (usize, usize);
 
@@ -23,41 +23,34 @@ pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) 
     }
 
     macro_rules! pn0 {
-        ($self: expr, $node:expr, $text:expr) => {
-            {
-                $self.graph.nodes.push($text);
-                $self.graph.nodes.len() - 1
-            }
-        }
+        ($self: expr, $node:expr, $text:expr) => {{
+            $self.graph.nodes.push($text);
+            $self.graph.nodes.len() - 1
+        }};
     }
 
     macro_rules! pn1 {
-        ($self: expr, $node:expr, $text:expr) => {
-            {
-                $self.graph.nodes.push($text);
-                let pos = $self.graph.nodes.len() - 1;
-                let child1 = $self.handler($node.left);
-                $self.graph.edges.push((pos, child1));
-                pos
-            }
-        }
+        ($self: expr, $node:expr, $text:expr) => {{
+            $self.graph.nodes.push($text);
+            let pos = $self.graph.nodes.len() - 1;
+            let child1 = $self.handler($node.left);
+            $self.graph.edges.push((pos, child1));
+            pos
+        }};
     }
 
     macro_rules! pn2 {
-        ($self: expr, $node:expr, $text:expr) => {
-            {
-                $self.graph.nodes.push($text);
-                let pos = $self.graph.nodes.len() - 1;
-                let child1 = $self.handler($node.left);
-                let child2 = $self.handler($node.right);
-                $self.graph.edges.push((pos, child1));
-                $self.graph.edges.push((pos, child2));
-                pos
-            }
-        }
+        ($self: expr, $node:expr, $text:expr) => {{
+            $self.graph.nodes.push($text);
+            let pos = $self.graph.nodes.len() - 1;
+            let child1 = $self.handler($node.left);
+            let child2 = $self.handler($node.right);
+            $self.graph.edges.push((pos, child1));
+            $self.graph.edges.push((pos, child2));
+            pos
+        }};
     }
 
-    
     impl<'a, T: Siaa> GrammarRenderer<'a, T> {
         pub fn new(grammar: &'a Arena<Parser<T>>, start: NodeId) -> GrammarRenderer<T> {
             GrammarRenderer {
@@ -74,14 +67,13 @@ pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) 
             let node = self.grammar[nodeid].clone();
 
             match &node.data {
-                Parser::Emp =>        pn0!(self, node, format!("{:4} Emp", nodeid)),
+                Parser::Emp => pn0!(self, node, format!("{:4} Emp", nodeid)),
                 Parser::Tok(ref c) => pn0!(self, node, format!("{:4} ':{:?}", nodeid, c)),
                 Parser::Eps(ref c) => pn0!(self, node, format!("{:4} e:{:?}", nodeid, c)),
-                Parser::Alt =>        pn2!(self, node, format!("{:4} Alt", nodeid)),
-                Parser::Cat =>        pn2!(self, node, format!("{:4} Cat", nodeid)),
-                Parser::Laz(ref c) => pn1!(self, node, format!("{:4} L:{:?}", nodeid, c)),
-                Parser::Del =>        pn1!(self, node, format!("{:4} Del", nodeid)),
-                Parser::Unk =>        pn0!(self, node, format!("{:4} Unk", nodeid)),
+                Parser::Alt => pn2!(self, node, format!("{:4} Alt", nodeid)),
+                Parser::Cat => pn2!(self, node, format!("{:4} Cat", nodeid)),
+                Parser::Del => pn1!(self, node, format!("{:4} Del", nodeid)),
+                Parser::Ukn => pn0!(self, node, format!("{:4} Ukn", nodeid)),
             }
         }
 
@@ -132,7 +124,7 @@ pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) 
 // render_trees is not enabled, inline it so that not even the
 // function call is costed.
 
-#[cfg(not(feature="render_trees"))]
+#[cfg(not(feature = "render_trees"))]
 #[inline]
 pub fn render<T: Siaa>(_arena: &Arena<Parser<T>>, _start: NodeId, _filename: &str) {
     // No-op
