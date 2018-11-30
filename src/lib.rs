@@ -3,7 +3,7 @@
 extern crate arena;
 extern crate dot;
 
-mod types;
+pub mod types;
 
 #[macro_use]
 pub mod language;
@@ -12,6 +12,10 @@ pub mod language;
 pub mod grammar;
 
 pub mod barre;
+pub use grammar::{Grammar, ParseTree};
+
+pub use barre::Barre;
+
 mod builder;
 
 pub mod render;

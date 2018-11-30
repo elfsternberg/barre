@@ -1,9 +1,33 @@
-use barre::barre::Barre;
+extern crate barre;
+use barre::{Barre, ParseTree};
+use barre::types::Siaa;
+use std::collections::HashSet;
 // use language::{cat, alt, rep, tok};
 
 use barre::language::tok;
 
-use barre::grammar::ParseTree;
+fn extract_match_inner(s: &mut String, pt: &ParseTree<char>) {
+    match pt {
+        ParseTree::Nil => {},
+        ParseTree::Lit(t) => s.push(t.clone()),
+        ParseTree::Pair(a, b) => {
+            extract_match_inner(s, a);
+            extract_match_inner(s, b);
+        }
+    }
+}
+
+fn extract_match(res: &Option<HashSet<ParseTree<char>>>) -> Option<String> {
+    let mut ret = String::new();
+    if let Some(r) = res {
+        let mut it = r.iter();
+        if let Some(pt) = it.next() {
+            extract_match_inner(&mut ret, &pt);
+            return Some(ret);
+        }
+    }
+    None
+}
 
 macro_rules! mkpair {
     ($(($l:expr, $r:expr)),*) => {
@@ -19,8 +43,7 @@ macro_rules! testpat {
             let matches = mkpair![$(($l, $r)),*];
             for pair in matches {
                 let res = $pt.parse(&mut pair.0.chars());
-                println!("{:?} {:?} {:?}", &pair.0, &pair.1, res);
-                assert!(res == pair.1);
+                assert!(extract_match(&res) == pair.1);
             }
         }
     }
@@ -42,29 +65,29 @@ macro_rules! testpat {
 fn just_a_token() {
     let lang = tok('a');
     let mut barre = Barre::from_language(&lang);
-    testpat!(barre; [("a", Some(hashset!(ParseTree::Lit('a')))),
-                         ("b", None),
-                         ("", None),
-                         ("ab", None)]);
+    testpat!(barre; [("a", Some("a".to_string())),
+                     ("b", None),
+                     ("", None),
+                     ("ab", None)]);
 }
 
 #[test]
 fn just_an_alt() {
     let lang = alt!(tok('a'), tok('b'), tok('c'), tok('d'));
     let mut barre = Barre::from_language(&lang);
-    testpat!(barre; [("a", Some(hashset!(ParseTree::Lit('a')))),
-                         ("b", Some(hashset!(ParseTree::Lit('b')))),
-                         ("d", Some(hashset!(ParseTree::Lit('d')))),
-                         ("", None),
-                         ("ab", None),
-                         ("ba", None)]);
+    testpat!(barre; [("a", Some("a".to_string())),
+                     ("b", Some("b".to_string())),
+                     ("d", Some("d".to_string())),
+                     ("", None),
+                     ("ab", None),
+                     ("ba", None)]);
 }
 
 #[test]
 fn just_a_cat() {
     let lang = cat!(tok('a'), tok('b'), tok('c'));
     let mut barre = Barre::from_language(&lang);
-    testpat!(barre; [("abc", None)]);
+    testpat!(barre; [("abc", Some("abc".to_string()))]);
     //a, ("", None), ("b", None),
     //("aab", None), ("aba", None), ("a", None)
     // ]);
