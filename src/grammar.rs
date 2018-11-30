@@ -15,6 +15,7 @@ pub enum ParseTree<T>
 where
     T: Hash + Eq + PartialEq,
 {
+    Nil,
     Lit(T),
     Pair(Box<ParseTree<T>>, Box<ParseTree<T>>),
 }
@@ -112,10 +113,6 @@ impl<T: Siaa> Grammar<T> {
             Parser::Cat => {
                 let l = self.derive(node.left, &token);
                 let r = self.derive(node.right, &token);
-                if l == self.empty || r == self.empty {
-                    return self.empty;
-                }
-
                 self.arena[nodeid].left = add_node!(
                     self,
                     Parser::Cat,
