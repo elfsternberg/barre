@@ -5,7 +5,7 @@ build:
 	cargo +nightly build
 
 clean:
-	rm -f output*.dot
+	rm -f output*.dot output*.png
 
 realclean: clean
 	cargo clean
