@@ -1,11 +1,21 @@
 [package]
-name = "regex_derivatives"
+name = "barre"
 version = "0.1.0"
 authors = ["Elf M. Sternberg <elf.sternberg@gmail.com>"]
 description = "An implementation of Matt Might's Parsing With Derivatives."
 # edition = "2018"
 
+[features]
+default = []
+render_trees = []
+
 [dependencies]
-rand = "0.5.5"
+arena = { path = "arena" }
+dot = "0.1.4"
 
 [dev-dependencies]
+rand = "0.5.5"
+
+[[test]]
+name = "test"
+path = "test/mod.rs"

@@ -12,3 +12,5 @@ Cargo.lock
 notes
 **/*:[0-9]*:[0-9]*
 elf-notes/
+output*.dot
+output*.png
