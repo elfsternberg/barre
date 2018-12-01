@@ -87,33 +87,32 @@ impl<T: Siaa> Grammar<T> {
         (node.left, node.right)
     }
 
-    fn derive_cat(&mut self, nodeid: NodeId, token: &T) -> NodeId {
+    fn derive_cat(&mut self, nodeid: NodeId, target: NodeId, token: &T) -> NodeId {
         let (node_left, node_right) = self.get_lr(nodeid);
-        let targid = add_node!(self, Parser::Ukn);
-
         let l = self.derive(node_left, &token);
+        self.arena[target].right = add_node!(self, Parser::Cat, l, node_right);
+
         let r = self.derive(node_right, &token);
-        self.arena[targid].left = add_node!(self, Parser::Cat, add_node!(self, Parser::Del, node_left), r);
-        self.arena[targid].right = add_node!(self, Parser::Cat, l, node_right);
-        self.arena[targid].data = Parser::Alt;
-        targid
+        self.arena[target].left = add_node!(self, Parser::Cat, add_node!(self, Parser::Del, node_left), r);
+
+        self.arena[target].data = Parser::Alt;
+        target
     }
 
-    fn derive_alt(&mut self, nodeid: NodeId, token: &T) -> NodeId {
+    fn derive_alt(&mut self, nodeid: NodeId, target: NodeId, token: &T) -> NodeId {
         let (node_left, node_right) = self.get_lr(nodeid);
-        let targid = add_node!(self, Parser::Ukn);
         let l = self.derive(node_left, &token);
         let r = self.derive(node_right, &token);
         if l == self.empty {
-            self.arena[targid] = self.arena[r].clone();
+            self.arena[target] = self.arena[r].clone();
         } else if r == self.empty {
-            self.arena[targid] = self.arena[l].clone();
+            self.arena[target] = self.arena[l].clone();
         } else {
-            self.arena[targid].left = self.derive(node_left, &token);
-            self.arena[targid].right = self.derive(node_right, &token);
-            self.arena[targid].data = Parser::Alt;
+            self.arena[target].left = self.derive(node_left, &token);
+            self.arena[target].right = self.derive(node_right, &token);
+            self.arena[target].data = Parser::Alt;
         }
-        targid
+        target
     }
 
     fn derive(&mut self, nodeid: NodeId, token: &T) -> NodeId {
@@ -123,9 +122,8 @@ impl<T: Siaa> Grammar<T> {
             };
         };
 
+        let node = &self.arena[nodeid].clone();
         let next_derivative = {
-            let node = &self.arena[nodeid].clone();
-
             match node.data {
                 Parser::Emp => self.empty,
                 Parser::Eps(_) => self.empty,
@@ -133,8 +131,7 @@ impl<T: Siaa> Grammar<T> {
 
                 Parser::Tok(ref t) => iff!(*t == *token, self.add(Parser::Eps(token.clone())), self.empty),
 
-                Parser::Alt => self.derive_alt(nodeid, token),
-                Parser::Cat => self.derive_cat(nodeid, token),
+                Parser::Alt | Parser::Cat => self.add(Parser::Ukn),
                 Parser::Ukn => {
                     panic!("Uknnown node in derive operation. CANTHAPPEN.");
                 }
@@ -142,7 +139,12 @@ impl<T: Siaa> Grammar<T> {
         };
 
         self.memo.insert((nodeid, token.clone()), next_derivative);
-        next_derivative
+
+        match node.data {
+            Parser::Cat => self.derive_cat(nodeid, next_derivative, token),
+            Parser::Alt => self.derive_alt(nodeid, next_derivative, token),
+            _ => { next_derivative }
+        }
     }
 
     fn nullable(&mut self, nodeid: NodeId) -> bool {
@@ -211,7 +213,7 @@ impl<T: Siaa> Grammar<T> {
         let mut nodeid = start;
         let mut items = items.peekable();
         let mut count = 0;
-        println!("A1: {:?} {:?}", self.arena, nodeid);
+        // println!("A1: {:?} {:?}", self.arena, nodeid);
         loop {
             render(&self.arena, nodeid, &format!("output-{:?}.dot", count));
             count += 1;
@@ -221,7 +223,7 @@ impl<T: Siaa> Grammar<T> {
                 // true.
                 None => {
                     render(&self.arena, nodeid, &format!("output-{:?}.dot", count));
-                    println!("Sending to breaker: {:?}", nodeid);
+                    // println!("Sending to breaker: {:?}", nodeid);
                     let ret = self.nullable(nodeid);
                     render(&self.arena, nodeid, &format!("output-{:?}.dot", count + 1));
                     break if ret { Some(self.parse_tree(nodeid)) } else { None };

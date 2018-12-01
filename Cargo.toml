@@ -11,11 +11,19 @@ render_trees = []
 
 [dependencies]
 arena = { path = "arena" }
+
+[target.'cfg(feature = "render_trees")'.dependencies]
 dot = "0.1.4"
 
 [dev-dependencies]
 rand = "0.5.5"
+criterion = "0.2.5"
+
 
 [[test]]
 name = "test"
 path = "test/mod.rs"
+
+[[bench]]
+name = "bench_barre"
+harness = false

@@ -120,3 +120,14 @@ fn slightly_more_complex_untyped_macro() {
         ("abcddf", None)
     ]);
 }
+
+#[test]
+fn graphit() {
+    let lang = alt!(
+        cat!(tok('f'), tok('o'), tok('o')),
+        cat!(tok('b'), tok('a'), tok('r')),
+        cat!(tok('b'), tok('a'), tok('z'))
+    );
+    let mut barre = Barre::from_language(&lang);
+    testpat!(barre; [("bar", Some("bar"))]);
+}

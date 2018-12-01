@@ -1,7 +1,9 @@
 #![cfg_attr(feature = "cargo-clippy", allow(redundant_field_names))]
 
 extern crate arena;
-extern crate dot;
+
+// #[cfg(feature = "render_trees")]
+// extern crate dot;
 
 pub mod types;
 
