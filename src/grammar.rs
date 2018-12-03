@@ -6,6 +6,7 @@ use types::{Parser, Siaa};
 
 pub struct Grammar<T: Siaa> {
     pub arena: Arena<Parser<T>>,
+    pub store: Vec<T>,
     pub memo: HashMap<(NodeId, T), NodeId>,
     pub empty: NodeId,
 }
@@ -82,6 +83,11 @@ impl<T: Siaa> Grammar<T> {
         self.arena.add(parser)
     }
 
+    fn add_eps(&mut self, token: &T) -> NodeId {
+        self.store.push(token.clone());
+        self.arena.add(Parser::Eps(self.store.len() - 1))
+    }
+
     fn get_lr(&self, nodeid: NodeId) -> (NodeId, NodeId) {
         let node = &self.arena[nodeid];
         (node.left, node.right)
@@ -89,13 +95,17 @@ impl<T: Siaa> Grammar<T> {
 
     fn derive_cat(&mut self, nodeid: NodeId, target: NodeId, token: &T) -> NodeId {
         let (node_left, node_right) = self.get_lr(nodeid);
-        let l = self.derive(node_left, &token);
-        self.arena[target].right = add_node!(self, Parser::Cat, l, node_right);
-
-        let r = self.derive(node_right, &token);
-        self.arena[target].left = add_node!(self, Parser::Cat, add_node!(self, Parser::Del, node_left), r);
-
-        self.arena[target].data = Parser::Alt;
+//        if self.nullable(node_left) {
+            let l = self.derive(node_left, &token);
+            self.arena[target].right = add_node!(self, Parser::Cat, l, node_right);
+            let r = self.derive(node_right, &token);
+            self.arena[target].left = add_node!(self, Parser::Cat, add_node!(self, Parser::Del, node_left), r);
+            self.arena[target].data = Parser::Alt;
+//        } else {
+//            self.arena[target].left = self.derive(node_left, &token);
+//            self.arena[target].right = node_right;
+//            self.arena[target].data = Parser::Cat;
+//        }
         target
     }
 
@@ -128,9 +138,7 @@ impl<T: Siaa> Grammar<T> {
                 Parser::Emp => self.empty,
                 Parser::Eps(_) => self.empty,
                 Parser::Del => self.empty,
-
-                Parser::Tok(ref t) => iff!(*t == *token, self.add(Parser::Eps(token.clone())), self.empty),
-
+                Parser::Tok(ref t) => iff!(*t == *token, self.add_eps(token), self.empty),
                 Parser::Alt | Parser::Cat => self.add(Parser::Ukn),
                 Parser::Ukn => {
                     panic!("Uknnown node in derive operation. CANTHAPPEN.");
@@ -178,7 +186,7 @@ impl<T: Siaa> Grammar<T> {
         match &node.data {
             Parser::Emp => hashset!(),
             Parser::Tok(_) => hashset!(),
-            Parser::Eps(ref c) => hashset!(ParseTree::Lit(c.clone())),
+            Parser::Eps(ref c) => hashset!(ParseTree::Lit(self.store[*c].clone())),
             Parser::Del => self.parse_tree_inner(memo, node.left),
 
             Parser::Alt => {

@@ -36,6 +36,7 @@ impl<T: Siaa> Barre<T> {
     {
         let mut grammar = Grammar {
             arena: self.arena.clone(),
+            store: vec!(),
             memo: HashMap::new(),
             empty: self.empty,
         };

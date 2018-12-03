@@ -31,10 +31,13 @@ impl<T> Siaa for T where
 pub enum Parser<T: Siaa> {
     Ukn,
     Emp,
-    Eps(T),
+    Eps(NodeId),
     Del,
     Tok(T),
     Alt,
     Cat,
     //    Rep,
+    //Its  // Intersection
+    //Lea  // Interleaf (see RelaxNG)
+    //Neg  // Negation
 }
