@@ -95,17 +95,17 @@ impl<T: Siaa> Grammar<T> {
 
     fn derive_cat(&mut self, nodeid: NodeId, target: NodeId, token: &T) -> NodeId {
         let (node_left, node_right) = self.get_lr(nodeid);
-//        if self.nullable(node_left) {
+        if self.nullable(node_left) {
             let l = self.derive(node_left, &token);
             self.arena[target].right = add_node!(self, Parser::Cat, l, node_right);
             let r = self.derive(node_right, &token);
             self.arena[target].left = add_node!(self, Parser::Cat, add_node!(self, Parser::Del, node_left), r);
             self.arena[target].data = Parser::Alt;
-//        } else {
-//            self.arena[target].left = self.derive(node_left, &token);
-//            self.arena[target].right = node_right;
-//            self.arena[target].data = Parser::Cat;
-//        }
+        } else {
+            self.arena[target].left = self.derive(node_left, &token);
+            self.arena[target].right = node_right;
+            self.arena[target].data = Parser::Cat;
+        }
         target
     }
 
