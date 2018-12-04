@@ -1,12 +1,11 @@
 extern crate barre;
-use barre::types::Siaa;
 use barre::{Barre, ParseTree};
 use std::collections::HashSet;
 // use language::{cat, alt, rep, tok};
 
 use barre::language::tok;
 
-fn extract_match_inner(s: &mut String, pt: &ParseTree<char>) {
+fn extract_match_inner(s: &mut String, pt: &ParseTree) {
     match pt {
         ParseTree::Nil => {}
         ParseTree::Lit(t) => s.push(t.clone()),
@@ -17,7 +16,7 @@ fn extract_match_inner(s: &mut String, pt: &ParseTree<char>) {
     }
 }
 
-fn extract_match(res: &Option<HashSet<ParseTree<char>>>) -> Option<String> {
+fn extract_match(res: &Option<HashSet<ParseTree>>) -> Option<String> {
     let mut ret = String::new();
     if let Some(r) = res {
         let mut it = r.iter();

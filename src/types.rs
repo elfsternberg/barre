@@ -6,6 +6,7 @@ pub type NodeId = usize;
 /// order to be useable in a regular expression.  All of these traits
 /// are supported by "char" and "u8", unsurprisingly.
 
+/*
 pub trait Siaa:
     std::clone::Clone
     + std::cmp::PartialEq
@@ -26,14 +27,15 @@ impl<T> Siaa for T where
         + std::default::Default
         + std::hash::Hash
 {}
+*/
 
-#[derive(Clone, Copy, Debug)]
-pub enum Parser<T: Siaa> {
+#[derive(Clone, Debug)]
+pub enum Parser {
     Ukn,
     Emp,
     Eps(NodeId),
     Del,
-    Tok(T),
+    Tok(char),
     Alt,
     Cat,
     //    Rep,

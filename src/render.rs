@@ -1,8 +1,8 @@
 use arena::{Arena, NodeId};
-use types::{Parser, Siaa};
+use types::Parser;
 
 #[cfg(feature = "render_trees")]
-pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) {
+pub fn render(arena: &Arena<Parser>, start: NodeId, filename: &str) {
     use dot;
     use std::borrow::Cow;
     use std::fs::File;
@@ -16,9 +16,9 @@ pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) 
         edges: Vec<(usize, usize)>,
     }
 
-    struct GrammarRenderer<'a, T: 'a + Siaa> {
+    struct GrammarRenderer<'a> {
         start: NodeId,
-        grammar: &'a Arena<Parser<T>>,
+        grammar: &'a Arena<Parser>,
         graph: Graph,
     }
 
@@ -51,8 +51,8 @@ pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) 
         }};
     }
 
-    impl<'a, T: Siaa> GrammarRenderer<'a, T> {
-        pub fn new(grammar: &'a Arena<Parser<T>>, start: NodeId) -> GrammarRenderer<T> {
+    impl<'a> GrammarRenderer<'a> {
+        pub fn new(grammar: &'a Arena<Parser>, start: NodeId) -> GrammarRenderer {
             GrammarRenderer {
                 start: start,
                 grammar: grammar,
@@ -126,6 +126,6 @@ pub fn render<T: Siaa>(arena: &Arena<Parser<T>>, start: NodeId, filename: &str) 
 
 #[cfg(not(feature = "render_trees"))]
 #[inline]
-pub fn render<T: Siaa>(_arena: &Arena<Parser<T>>, _start: NodeId, _filename: &str) {
+pub fn render(_arena: &Arena<Parser>, _start: NodeId, _filename: &str) {
     // No-op
 }

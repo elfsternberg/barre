@@ -1,24 +1,21 @@
 use arena::{Arena, NodeId};
 use render::render;
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
-use types::{Parser, Siaa};
+use types::Parser;
 
-pub struct Grammar<T: Siaa> {
-    pub arena: Arena<Parser<T>>,
-    pub store: Vec<T>,
-    pub memo: HashMap<(NodeId, T), NodeId>,
+pub struct Grammar {
+    pub arena: Arena<Parser>,
+    pub store: Vec<char>,
+    pub memo: HashMap<(NodeId, char), NodeId>,
     pub empty: NodeId,
 }
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub enum ParseTree<T>
-where
-    T: Hash + Eq + PartialEq,
+pub enum ParseTree
 {
     Nil,
-    Lit(T),
-    Pair(Box<ParseTree<T>>, Box<ParseTree<T>>),
+    Lit(char),
+    Pair(Box<ParseTree>, Box<ParseTree>),
 }
 
 // Deliberate mechanism to build things in the correct order, so that
@@ -76,14 +73,14 @@ macro_rules! hashset {
     };
 }
 
-type ExtractionType<T> = HashMap<(NodeId), HashSet<ParseTree<T>>>;
+type ExtractionType = HashMap<(NodeId), HashSet<ParseTree>>;
 
-impl<T: Siaa> Grammar<T> {
-    fn add(&mut self, parser: Parser<T>) -> NodeId {
+impl Grammar {
+    fn add(&mut self, parser: Parser) -> NodeId {
         self.arena.add(parser)
     }
 
-    fn add_eps(&mut self, token: &T) -> NodeId {
+    fn add_eps(&mut self, token: &char) -> NodeId {
         self.store.push(token.clone());
         self.arena.add(Parser::Eps(self.store.len() - 1))
     }
@@ -93,7 +90,7 @@ impl<T: Siaa> Grammar<T> {
         (node.left, node.right)
     }
 
-    fn derive_cat(&mut self, nodeid: NodeId, target: NodeId, token: &T) -> NodeId {
+    fn derive_cat(&mut self, nodeid: NodeId, target: NodeId, token: &char) -> NodeId {
         let (node_left, node_right) = self.get_lr(nodeid);
         if self.nullable(node_left) {
             let l = self.derive(node_left, &token);
@@ -109,7 +106,7 @@ impl<T: Siaa> Grammar<T> {
         target
     }
 
-    fn derive_alt(&mut self, nodeid: NodeId, target: NodeId, token: &T) -> NodeId {
+    fn derive_alt(&mut self, nodeid: NodeId, target: NodeId, token: &char) -> NodeId {
         let (node_left, node_right) = self.get_lr(nodeid);
         let l = self.derive(node_left, &token);
         let r = self.derive(node_right, &token);
@@ -125,7 +122,7 @@ impl<T: Siaa> Grammar<T> {
         target
     }
 
-    fn derive(&mut self, nodeid: NodeId, token: &T) -> NodeId {
+    fn derive(&mut self, nodeid: NodeId, token: &char) -> NodeId {
         {
             if let Some(cached_node) = self.memo.get(&(nodeid, token.clone())) {
                 return *cached_node;
@@ -172,7 +169,7 @@ impl<T: Siaa> Grammar<T> {
         }
     }
 
-    pub fn parse_tree_inner(&mut self, memo: &mut ExtractionType<T>, nodeid: NodeId) -> HashSet<ParseTree<T>> {
+    pub fn parse_tree_inner(&mut self, memo: &mut ExtractionType, nodeid: NodeId) -> HashSet<ParseTree> {
         if let Some(cached_result) = memo.get(&nodeid) {
             return cached_result.clone();
         };
@@ -209,14 +206,14 @@ impl<T: Siaa> Grammar<T> {
         }
     }
 
-    pub fn parse_tree(&mut self, start: NodeId) -> HashSet<ParseTree<T>> {
-        let mut memo: ExtractionType<T> = HashMap::new();
+    pub fn parse_tree(&mut self, start: NodeId) -> HashSet<ParseTree> {
+        let mut memo: ExtractionType = HashMap::new();
         self.parse_tree_inner(&mut memo, start)
     }
 
-    pub fn parse<I>(&mut self, items: &mut I, start: NodeId) -> Option<HashSet<ParseTree<T>>>
+    pub fn parse<I>(&mut self, items: &mut I, start: NodeId) -> Option<HashSet<ParseTree>>
     where
-        I: Iterator<Item = T>,
+        I: Iterator<Item = char>,
     {
         let mut nodeid = start;
         let mut items = items.peekable();

@@ -1,8 +1,8 @@
 use arena::{Arena, NodeId};
 use language::Language;
-use types::{Parser, Siaa};
+use types::Parser;
 
-pub fn init_barre_arena<T: Siaa>() -> Arena<Parser<T>> {
+pub fn init_barre_arena() -> Arena<Parser> {
     let mut arena = Arena::new();
     let _ = arena.add(Parser::Emp);
     let _ = arena.add(Parser::Emp);
@@ -10,10 +10,10 @@ pub fn init_barre_arena<T: Siaa>() -> Arena<Parser<T>> {
     arena
 }
 
-pub fn language_to_arena<T: Siaa>(lang: &Language<T>) -> (Arena<Parser<T>>, NodeId) {
+pub fn language_to_arena(lang: &Language) -> (Arena<Parser>, NodeId) {
     let mut new_representation = init_barre_arena();
 
-    fn language_handler<T: Siaa>(lang: &Language<T>, r: &mut Arena<Parser<T>>) -> NodeId {
+    fn language_handler(lang: &Language, r: &mut Arena<Parser>) -> NodeId {
         match lang {
             Language::Epsilon => r.add(Parser::Eps(2)),
 

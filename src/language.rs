@@ -1,52 +1,40 @@
 use std::fmt;
 
 #[derive(PartialEq, Debug)]
-pub struct Token<T>(pub T)
-where
-    T: std::fmt::Debug;
+pub struct Token(pub char);
 
 #[derive(PartialEq, Debug)]
-pub struct Alt<T>(pub Box<Language<T>>, pub Box<Language<T>>)
-where
-    T: std::fmt::Display + std::fmt::Debug;
+pub struct Alt(pub Box<Language>, pub Box<Language>);
 
 #[derive(PartialEq, Debug)]
-pub struct Cat<T>(pub Box<Language<T>>, pub Box<Language<T>>)
-where
-    T: std::fmt::Display + std::fmt::Debug;
+pub struct Cat(pub Box<Language>, pub Box<Language>);
 
 // #[derive(PartialEq, Debug)]
-// pub struct Repeat<T>(pub Box<Language<T>>)
+// pub struct Repeat(pub Box<Language>)
 // where
 //     T: std::fmt::Display + std::fmt::Debug;
 
 #[derive(PartialEq, Debug)]
-pub enum Language<T>
-where
-    T: std::fmt::Display + std::fmt::Debug,
+pub enum Language
 {
     Epsilon,
-    Token(Token<T>),
-    Alt(Alt<T>),
-    Cat(Cat<T>),
-    //     Repeat(Repeat<T>),
+    Token(Token),
+    Alt(Alt),
+    Cat(Cat),
+    //     Repeat(Repeat),
 }
 
-pub fn cat<T>(l: Language<T>, r: Language<T>) -> Language<T>
-where
-    T: std::fmt::Display + std::fmt::Debug,
+pub fn cat(l: Language, r: Language) -> Language
 {
     Language::Cat(Cat(Box::new(l), Box::new(r)))
 }
 
-pub fn alt<T>(l: Language<T>, r: Language<T>) -> Language<T>
-where
-    T: std::fmt::Display + std::fmt::Debug,
+pub fn alt(l: Language, r: Language) -> Language
 {
     Language::Alt(Alt(Box::new(l), Box::new(r)))
 }
 
-// pub fn rep<T>(n: Language<T>) -> Language<T>
+// pub fn rep(n: Language) -> Language
 // where
 //     T: std::fmt::Display + std::fmt::Debug,
 // {
@@ -54,16 +42,12 @@ where
 // }
 //
 
-pub fn tok<T>(t: T) -> Language<T>
-where
-    T: std::fmt::Display + std::fmt::Debug,
+pub fn tok(t: char) -> Language
 {
     Language::Token(Token(t))
 }
 
-pub fn eps<T>() -> Language<T>
-where
-    T: std::fmt::Display + std::fmt::Debug,
+pub fn eps() -> Language
 {
     Language::Epsilon
 }
@@ -97,14 +81,10 @@ macro_rules! alt {
 //     }
 // }
 
-impl<T> fmt::Display for Alt<T>
-where
-    T: std::fmt::Display + std::fmt::Debug,
+impl fmt::Display for Alt
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn alt_helper<T>(f: &mut fmt::Formatter, alt: &Alt<T>) -> fmt::Result
-        where
-            T: std::fmt::Display + std::fmt::Debug,
+        fn alt_helper(f: &mut fmt::Formatter, alt: &Alt) -> fmt::Result
         {
             write!(f, "(")?;
             alt.0.fmt(f)?;
@@ -132,9 +112,7 @@ where
     }
 }
 
-impl<T> fmt::Display for Cat<T>
-where
-    T: std::fmt::Display + std::fmt::Debug,
+impl fmt::Display for Cat
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)?;
@@ -142,7 +120,7 @@ where
     }
 }
 
-// impl<T> fmt::Display for Repeat<T>
+// impl fmt::Display for Repeat
 // where
 //     T: std::fmt::Display + std::fmt::Debug,
 // {
@@ -161,14 +139,12 @@ where
 //     }
 // }
 
-impl<T> fmt::Display for Language<T>
-where
-    T: std::fmt::Display + std::fmt::Debug,
+impl fmt::Display for Language
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Language::Epsilon => write!(f, "ε"),
-            Language::Token(ref c) => write!(f, "{:?}", c),
+            Language::Token(ref c) => write!(f, "{}", c.0),
             Language::Alt(ref alt) => write!(f, "{}", alt),
             Language::Cat(ref cat) => write!(f, "{}", cat),
             //             Language::Repeat(ref rep) => write!(f, "{}", rep),
