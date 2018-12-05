@@ -2,20 +2,13 @@ use arena::{Arena, NodeId};
 use render::render;
 use std::collections::{HashMap, HashSet};
 use types::Parser;
+use parsesets::{ParseSet, ParseTree};
 
 pub struct Grammar {
     pub arena: Arena<Parser>,
-    pub store: Vec<char>,
+    pub store: Vec<ParseSet>,
     pub memo: HashMap<(NodeId, char), NodeId>,
     pub empty: NodeId,
-}
-
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub enum ParseTree
-{
-    Nil,
-    Lit(char),
-    Pair(Box<ParseTree>, Box<ParseTree>),
 }
 
 // Deliberate mechanism to build things in the correct order, so that
@@ -53,27 +46,7 @@ macro_rules! iff {
     };
 }
 
-// Using a '+' instead of a '*' in the second expression allows this
-// macro to build code that can be used immutably; without it, the
-// compiler complains that building an empty hashset does not require
-// an initial mutable definition.  Annoying, but formally correct.
-
-#[macro_export]
-macro_rules! hashset {
-    () => {
-        std::collections::HashSet::new()
-    };
-
-    ( $( $x:expr ),+ ) => {
-        {
-            let mut hset = hashset!();
-            $(hset.insert($x);)*
-            hset
-        }
-    };
-}
-
-type ExtractionType = HashMap<(NodeId), HashSet<ParseTree>>;
+type ExtractionType = HashMap<(NodeId), ParseSet>;
 
 impl Grammar {
     fn add(&mut self, parser: Parser) -> NodeId {
@@ -81,7 +54,7 @@ impl Grammar {
     }
 
     fn add_eps(&mut self, token: &char) -> NodeId {
-        self.store.push(token.clone());
+        self.store.push(ParseSet::with(ParseTree::Lit(token.clone())));
         self.arena.add(Parser::Eps(self.store.len() - 1))
     }
 
@@ -169,36 +142,30 @@ impl Grammar {
         }
     }
 
-    pub fn parse_tree_inner(&mut self, memo: &mut ExtractionType, nodeid: NodeId) -> HashSet<ParseTree> {
+    pub fn parse_tree_inner(&mut self, memo: &mut ExtractionType, nodeid: NodeId) -> ParseSet {
         if let Some(cached_result) = memo.get(&nodeid) {
             return cached_result.clone();
         };
 
         if !self.nullable(nodeid) {
-            return hashset!();
+            return ParseSet::new();
         };
 
         let node = &self.arena[nodeid].clone();
 
         match &node.data {
-            Parser::Emp => hashset!(),
-            Parser::Tok(_) => hashset!(),
-            Parser::Eps(ref c) => hashset!(ParseTree::Lit(self.store[*c].clone())),
+            Parser::Emp => ParseSet::new(),
+            Parser::Tok(_) => ParseSet::new(),
+            Parser::Eps(ref c) => self.store[*c].clone(),
             Parser::Del => self.parse_tree_inner(memo, node.left),
 
             Parser::Alt => {
                 let p1 = self.parse_tree_inner(memo, node.left);
-                p1.union(&self.parse_tree_inner(memo, node.right)).cloned().collect()
+                p1.union(&self.parse_tree_inner(memo, node.right))
             }
             Parser::Cat => {
-                let mut ret = HashSet::new();
-                let p2 = self.parse_tree_inner(memo, node.right);
-                for t1 in self.parse_tree_inner(memo, node.left) {
-                    for t2 in &p2 {
-                        ret.insert(ParseTree::Pair(Box::new(t1.clone()), Box::new(t2.clone())));
-                    }
-                }
-                ret
+                let p1 = self.parse_tree_inner(memo, node.left);
+                p1.permute(&self.parse_tree_inner(memo, node.right))
             }
             Parser::Ukn => {
                 panic!("Uknnown node in parsetree operation. CANTHAPPEN");
@@ -208,7 +175,7 @@ impl Grammar {
 
     pub fn parse_tree(&mut self, start: NodeId) -> HashSet<ParseTree> {
         let mut memo: ExtractionType = HashMap::new();
-        self.parse_tree_inner(&mut memo, start)
+        self.parse_tree_inner(&mut memo, start).0    // Note trailing struct extraction.
     }
 
     pub fn parse<I>(&mut self, items: &mut I, start: NodeId) -> Option<HashSet<ParseTree>>

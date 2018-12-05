@@ -1,8 +1,8 @@
 use arena::{Arena, NodeId};
 use std::collections::{HashMap, HashSet};
-
 use builder::{init_barre_arena, language_to_arena};
-use grammar::{Grammar, ParseTree};
+use grammar::Grammar;
+use parsesets::ParseTree;
 use language::Language;
 use types::Parser;
 

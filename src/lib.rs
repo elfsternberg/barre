@@ -10,11 +10,14 @@ pub mod types;
 #[macro_use]
 pub mod language;
 
+mod parsesets;
+pub use parsesets::ParseTree;
+
 #[macro_use]
 pub mod grammar;
 
 pub mod barre;
-pub use grammar::{Grammar, ParseTree};
+pub use grammar::Grammar;
 
 pub use barre::Barre;
 
