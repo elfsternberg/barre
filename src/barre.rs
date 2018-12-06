@@ -1,9 +1,9 @@
 use arena::{Arena, NodeId};
-use std::collections::{HashMap, HashSet};
 use builder::{init_barre_arena, language_to_arena};
 use grammar::Grammar;
-use parsesets::ParseTree;
 use language::Language;
+use parsesets::ParseTree;
+use std::collections::{HashMap, HashSet};
 use types::Parser;
 
 pub struct Barre {
@@ -36,12 +36,15 @@ impl Barre {
     {
         let mut grammar = Grammar {
             arena: self.arena.clone(),
-            store: vec!(),
+            store: vec![],
             memo: HashMap::new(),
             empty: self.empty,
         };
 
-        grammar.parse(items, self.start)
+        match grammar.parse(items, self.start) {
+            Some(parseset) => Some(parseset.0),
+            None => None,
+        }
     }
 }
 

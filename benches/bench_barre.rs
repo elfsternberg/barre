@@ -6,13 +6,13 @@ extern crate barre;
 
 use criterion::Criterion;
 
-use barre::types::Siaa;
-use barre::{Barre, ParseTree};
+use barre::Barre;
+use barre::ParseTree;
 use std::collections::HashSet;
 
-use barre::language::{cat, alt, tok};
+use barre::language::{alt, cat, tok};
 
-fn extract_match_inner(s: &mut String, pt: &ParseTree<char>) {
+fn extract_match_inner(s: &mut String, pt: &ParseTree) {
     match pt {
         ParseTree::Nil => {}
         ParseTree::Lit(t) => s.push(t.clone()),
@@ -23,7 +23,7 @@ fn extract_match_inner(s: &mut String, pt: &ParseTree<char>) {
     }
 }
 
-fn extract_match(res: &Option<HashSet<ParseTree<char>>>) -> Option<String> {
+fn extract_match(res: &Option<HashSet<ParseTree>>) -> Option<String> {
     let mut ret = String::new();
     if let Some(r) = res {
         let mut it = r.iter();
@@ -58,17 +58,18 @@ macro_rules! testpat {
 fn bench_more_complex_expression(c: &mut Criterion) {
     // /AB(CC|DDDD)E*F/
 
-    c.bench_function("Complex Expressions", |c| c.iter( || {
-        let lang = cat!(
-            tok('a'),
-            tok('b'),
-            alt!(cat!(tok('c'), tok('c')), cat!(tok('d'), tok('d'), tok('d'), tok('d'))),
-            tok('e'),
-            tok('f')
-        );
-        let mut barre = Barre::from_language(&lang);
-        
-        testpat!(barre; [
+    c.bench_function("Complex Expressions", |c| {
+        c.iter(|| {
+            let lang = cat!(
+                tok('a'),
+                tok('b'),
+                alt!(cat!(tok('c'), tok('c')), cat!(tok('d'), tok('d'), tok('d'), tok('d'))),
+                tok('e'),
+                tok('f')
+            );
+            let mut barre = Barre::from_language(&lang);
+
+            testpat!(barre; [
             ("abccef", Some("abccef")),
             ("abccef", Some("abccef")),
             ("abddddef", Some("abddddef")),
@@ -80,7 +81,8 @@ fn bench_more_complex_expression(c: &mut Criterion) {
             ("", None),
             ("abcddf", None)
         ]);
-    }));
+        })
+    });
 }
 
 criterion_group!(benches, bench_more_complex_expression);

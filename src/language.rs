@@ -15,8 +15,7 @@ pub struct Cat(pub Box<Language>, pub Box<Language>);
 //     T: std::fmt::Display + std::fmt::Debug;
 
 #[derive(PartialEq, Debug)]
-pub enum Language
-{
+pub enum Language {
     Epsilon,
     Token(Token),
     Alt(Alt),
@@ -24,13 +23,11 @@ pub enum Language
     //     Repeat(Repeat),
 }
 
-pub fn cat(l: Language, r: Language) -> Language
-{
+pub fn cat(l: Language, r: Language) -> Language {
     Language::Cat(Cat(Box::new(l), Box::new(r)))
 }
 
-pub fn alt(l: Language, r: Language) -> Language
-{
+pub fn alt(l: Language, r: Language) -> Language {
     Language::Alt(Alt(Box::new(l), Box::new(r)))
 }
 
@@ -42,13 +39,11 @@ pub fn alt(l: Language, r: Language) -> Language
 // }
 //
 
-pub fn tok(t: char) -> Language
-{
+pub fn tok(t: char) -> Language {
     Language::Token(Token(t))
 }
 
-pub fn eps() -> Language
-{
+pub fn eps() -> Language {
     Language::Epsilon
 }
 
@@ -81,11 +76,9 @@ macro_rules! alt {
 //     }
 // }
 
-impl fmt::Display for Alt
-{
+impl fmt::Display for Alt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn alt_helper(f: &mut fmt::Formatter, alt: &Alt) -> fmt::Result
-        {
+        fn alt_helper(f: &mut fmt::Formatter, alt: &Alt) -> fmt::Result {
             write!(f, "(")?;
             alt.0.fmt(f)?;
             write!(f, "|")?;
@@ -112,8 +105,7 @@ impl fmt::Display for Alt
     }
 }
 
-impl fmt::Display for Cat
-{
+impl fmt::Display for Cat {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)?;
         write!(f, "{}", self.1)
@@ -139,8 +131,7 @@ impl fmt::Display for Cat
 //     }
 // }
 
-impl fmt::Display for Language
-{
+impl fmt::Display for Language {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Language::Epsilon => write!(f, "ε"),

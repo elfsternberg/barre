@@ -1,5 +1,6 @@
 extern crate barre;
-use barre::{Barre, ParseTree};
+use barre::Barre;
+use barre::ParseTree;
 use std::collections::HashSet;
 // use language::{cat, alt, rep, tok};
 
@@ -18,6 +19,7 @@ fn extract_match_inner(s: &mut String, pt: &ParseTree) {
 
 fn extract_match(res: &Option<HashSet<ParseTree>>) -> Option<String> {
     let mut ret = String::new();
+    println!("{:?}", res);
     if let Some(r) = res {
         let mut it = r.iter();
         if let Some(pt) = it.next() {
