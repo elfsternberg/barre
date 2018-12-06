@@ -129,7 +129,7 @@ impl Grammar {
             Parser::Eps(ref l) => {
                 let right = self.arena[right_child_id].data.clone();
                 match right {
-                    // Optimization:  (s1)    (s2)    (s1   s2)
+                    // Optimization:  ε(s1) U ε(s2)    (s1 U s2)
                     // Note that this optimization is the union of two parse forests.
                     Parser::Eps(ref r) => {
                         let pos = {
