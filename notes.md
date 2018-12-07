@@ -43,3 +43,18 @@ exactly alike except that we may re-traverse assumed-not-nullable nodes
 but never re-traverse definitelynot-nullable nodes. This is because
 definitely-not-nullable nodes have their final value, while
 assumed-not-nullable nodes might not.
+
+---
+
+Taxonomy of Regex Dialects: 
+* BRE (POSIX 1003.2, Section 2.8 regular expressions)
+* ERE (GNU Extended Regular Expressions)
+* EMACS (Whatever the hell is in Emacs)
+* PCRE (Perl Compatible Regular Expressions)
+* PSIX (Perl Six Regular Expressions)
+* ROSIE (The Rosie Expression Language)
+
+Given what I now know about regular expression construction, I very much
+like Perl 6's approach to language construction.  It does mean that
+we'll need 'Barre | Barre' and 'Barre + Barre' operators (union and
+sequencing), but that doesn't seem impossible.

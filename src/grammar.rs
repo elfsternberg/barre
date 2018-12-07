@@ -16,7 +16,7 @@ pub struct Grammar {
 // the compiler's habit of building temporaries is circumvented and
 // the borrow rules work correctly.  Also: A lot easier.
 
-macro_rules! add_node {
+macro_rules! make_node {
     ( $source:expr, $par:expr ) => {{
         $source.add($par)
     }};
@@ -70,23 +70,29 @@ impl Grammar {
         self.arena.add(parser)
     }
 
-    fn add_eps(&mut self, token: &char) -> NodeId {
+    // Given a token, builds and returns a new epsilon node that
+    // contains a set with a parse tree of a single token.
+    //
+    fn make_eps(&mut self, token: &char) -> NodeId {
         self.store.push(ParseSet::with(ParseTree::Lit(token.clone())));
         self.arena.add(Parser::Eps(self.store.len() - 1))
     }
 
-    fn add_optimized_cat(&mut self, left_child_id: NodeId, right_child_id: NodeId) -> NodeId {
+    // Takes two child nodes and returns a new node built according to
+    // the optimization function.
+    //
+    fn make_optimized_cat(&mut self, left_child_id: NodeId, right_child_id: NodeId) -> NodeId {
         let left = &self.arena[left_child_id].clone();
         match left.data {
             Parser::Emp => self.empty,
             Parser::Cat => {
-                let left_cat = add_node!(
+                let left_cat = make_node!(
                     self,
                     Parser::Cat,
                     left.left,
-                    add_node!(self, Parser::Cat, left.right, right_child_id)
+                    make_node!(self, Parser::Cat, left.right, right_child_id)
                 );
-                add_node!(
+                make_node!(
                     self,
                     Parser::Red(Rc::new(move |_grammar, ts| ts.rebalance_after_seq())),
                     left_cat
@@ -94,13 +100,16 @@ impl Grammar {
             }
             Parser::Eps(ref n) => {
                 let ltree = self.store[*n].clone();
-                add_node!(self, Parser::Red(Rc::new(move |_grammar, ts| ltree.permute(&ts))))
+                make_node!(self, Parser::Red(Rc::new(move |_grammar, ts| ltree.permute(&ts))))
             }
-            _ => add_node!(self, Parser::Cat, left_child_id, right_child_id),
+            _ => make_node!(self, Parser::Cat, left_child_id, right_child_id),
         }
     }
 
-    fn add_optimized_red(&mut self, child_id: NodeId, func: Rc<RedFn>) -> NodeId {
+    // Takes a child node and a function, and returns a new node built
+    // according to the optimization function.
+    //
+    fn make_optimized_red(&mut self, child_id: NodeId, func: Rc<RedFn>) -> NodeId {
         let child = self.arena[child_id].clone();
         match child.data {
             Parser::Emp => self.empty,
@@ -119,10 +128,14 @@ impl Grammar {
                     f(grammar, t)
                 })))
             }
-            _ => add_node!(self, Parser::Red(func), child_id),
+            _ => make_node!(self, Parser::Red(func), child_id),
         }
     }
 
+    // Takes a base node and two child nodes, and modifies the base
+    // node, attaching children as needed.  Returns true if the
+    // operation was an optimization.
+    //
     fn set_optimized_alt(&mut self, target: NodeId, left_child_id: NodeId, right_child_id: NodeId) -> bool {
         let left = self.arena[left_child_id].clone();
         match left.data {
@@ -175,6 +188,10 @@ impl Grammar {
         }
     }
 
+    // Takes a base node and two child nodes, and modifies the base
+    // node, attaching children as needed.  Returns true if the
+    // operation was an optimization.
+    //
     // This is labeled "left" because optimizations on the right are
     // only done at build time.  Concatenation is the single hardest
     // aspect of this system to understand, so let me try to explain
@@ -241,8 +258,8 @@ impl Grammar {
             // epsilons to traverse with every iteration.
             //
             Parser::Cat => {
-                let deep_cat = self.add_optimized_cat(left.right, right_child_id);
-                let left_optimized_cat = self.add_optimized_cat(left.left, deep_cat);
+                let deep_cat = self.make_optimized_cat(left.right, right_child_id);
+                let left_optimized_cat = self.make_optimized_cat(left.left, deep_cat);
                 set_node!(
                     self.arena[target],
                     Parser::Red(Rc::new(move |_grammar, ts| ts.rebalance_after_seq())),
@@ -285,7 +302,7 @@ impl Grammar {
                 set_node!(
                     self.arena[target],
                     Parser::Red(Rc::new(move |_grammar, ts| ts.run_after_floated_reduction(&gunc))),
-                    self.add_optimized_cat(left.left, right_child_id)
+                    self.make_optimized_cat(left.left, right_child_id)
                 );
                 true
             }
@@ -297,6 +314,10 @@ impl Grammar {
         }
     }
 
+    // Takes a base node, a child node, and a parnt node, and modifies
+    // the base node, attaching children as needed.  Returns true if
+    // the operation was an optimization.
+    //
     fn set_optimized_red(&mut self, target: NodeId, child_id: NodeId, source_id: NodeId) -> bool {
         let child = self.arena[child_id].clone();
         match child.data {
@@ -312,7 +333,7 @@ impl Grammar {
                     set_node!(self.arena[target], Parser::Eps(self.store.len() - 1));
                     true
                 } else {
-                    panic!("set_optimized_red called, but the caller was identified as not a reduction node.");
+                    unreachable!()
                 }
             }
             Parser::Red(ref gunc) => {
@@ -330,7 +351,7 @@ impl Grammar {
                     );
                     true
                 } else {
-                    panic!("set_optimized_red called, but the caller was identified as not a reduction node.");
+                    unreachable!()
                 }
             }
             _ => {
@@ -338,12 +359,15 @@ impl Grammar {
                     set_node!(self.arena[target], Parser::Red(func.clone()), child_id);
                     false
                 } else {
-                    panic!("set_optimized_red called, but the caller was identified as not a reduction node.");
+                    unreachable!()
                 }
             }
         }
     }
 
+    // Given a node and token, returns a node that represents the
+    // derivative of the node passed in.
+    //
     fn derive(&mut self, nodeid: NodeId, token: &char) -> NodeId {
         {
             if let Some(cached_node) = self.memo.get(&(nodeid, token.clone())) {
@@ -357,14 +381,18 @@ impl Grammar {
                 Parser::Emp => self.empty,
                 Parser::Eps(_) => self.empty,
                 Parser::Del => self.empty,
-                Parser::Tok(ref t) => iff!(*t == *token, self.add_eps(token), self.empty),
+                Parser::Tok(ref t) => iff!(*t == *token, self.make_eps(token), self.empty),
                 Parser::Alt | Parser::Cat | Parser::Red(_) => self.add(Parser::Ukn),
                 Parser::Ukn => {
-                    panic!("Uknnown node in derive operation. CANTHAPPEN.");
+                    unreachable!()
                 }
             }
         };
 
+        // Cache the result.  Since the cache value is just an index,
+        // as long as we use the `set` functions that operate on what
+        // that index points to, this is safe.
+        //
         self.memo.insert((nodeid, token.clone()), next_derivative);
 
         let _ = match node.data {
@@ -379,14 +407,14 @@ impl Grammar {
                     let l = self.derive(node.left, token);
                     let r = self.derive(node.right, token);
                     let sac_l = node.left.clone();
-                    let red = self.add_optimized_red(
+                    let red = self.make_optimized_red(
                         r,
                         Rc::new(move |grammar, ts2| {
                             let ts1 = grammar.parse_tree(sac_l);
                             ts1.permute(&ts2)
                         }),
                     );
-                    let cat = self.add_optimized_cat(l, node.right);
+                    let cat = self.make_optimized_cat(l, node.right);
                     self.set_optimized_alt(next_derivative, red, cat)
                 } else {
                     let l = self.derive(node.left, token);
@@ -405,6 +433,8 @@ impl Grammar {
         next_derivative
     }
 
+    // Given a node, returns whether or not that node is nullable.
+    //
     fn nullable(&mut self, nodeid: NodeId) -> bool {
         let node = &self.arena[nodeid].clone();
 
@@ -418,7 +448,7 @@ impl Grammar {
             //             Parser::Rep => true,
             Parser::Red(_) => self.nullable(node.left),
             Parser::Ukn => {
-                panic!("Uknnown node in nullable operation. CANTHAPPEN.");
+                unreachable!("Uknnown node in nullable operation. CANTHAPPEN.");
             }
         }
     }
@@ -453,7 +483,7 @@ impl Grammar {
                 (*f)(self, t_tree)
             }
             Parser::Ukn => {
-                panic!("Uknnown node in parsetree operation. CANTHAPPEN");
+                unreachable!("Uknnown node in parsetree operation. CANTHAPPEN");
             }
         }
     }
