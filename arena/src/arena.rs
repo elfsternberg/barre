@@ -22,7 +22,7 @@ impl<T> Node<T> {
 
 #[derive(Debug, Clone)]
 pub struct Arena<T> {
-    pub arena: Vec<Node<T>>
+    arena: Vec<Node<T>>
 }
 
 impl<T> Arena<T> {
@@ -49,6 +49,10 @@ impl<T> Arena<T> {
 
     pub fn add(&mut self, data: T) -> NodeId {
         self.push(Node::new(data))
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<Node<T>> {
+        self.arena.iter()
     }
 }
 

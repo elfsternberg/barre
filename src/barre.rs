@@ -31,7 +31,7 @@ impl Barre {
     }
 
     pub fn init_nulls(&self) -> Vec<Nullable> {
-        self.arena.arena.iter().map(|t| parser_default_nullable(&t.data)).collect()
+        self.arena.iter().map(|t| parser_default_nullable(&t.data)).collect()
     }
 
     pub fn parse<I>(&mut self, items: &mut I) -> Option<HashSet<ParseTree>>
