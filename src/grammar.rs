@@ -1,6 +1,7 @@
 use arena::{Arena, Node, NodeId};
 use parsesets::{ParseSet, ParseTree, ParseTreeExtractor, RedFn};
 use render::render;
+use consy::Cell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use types::Parser;
@@ -53,7 +54,7 @@ macro_rules! set_node {
     ( $target:expr, $par:expr ) => {{
         $target.data = $par;
     }};
-    
+
     ( $target:expr, $par:expr, $lhs:expr ) => {{
         $target.left = $lhs;
         set_node!($target, $par);
@@ -100,7 +101,7 @@ impl Grammar {
     // contains a set with a parse tree of a single token.
     //
     fn make_eps(&mut self, token: &char) -> NodeId {
-        self.store.push(ParseSet::with(ParseTree::Lit(token.clone())));
+        self.store.push(ParseSet::with(Cell::Lit(token.clone())));
         let nodeid = self.store.len() - 1;
         self.add(Parser::Eps(nodeid))
     }

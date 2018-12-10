@@ -56,6 +56,7 @@ impl<T> Cell<T> {
     }
 }
 
+#[macro_export]
 macro_rules! cons {
     ($l:expr, $r:expr) => {{
         Cell::cons($l, $r)

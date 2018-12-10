@@ -1,4 +1,9 @@
 use std::collections::HashSet;
+
+#[macro_use]
+use consy::cons;
+
+use consy::Cell;
 use std::rc::Rc;
 pub type NodeId = usize;
 
@@ -8,18 +13,7 @@ pub type NodeId = usize;
 // done with another Lit() type, for extracting the trees
 // post-processed.
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub enum ParseTree {
-    Nil,
-    Lit(char),
-    Pair(Box<ParseTree>, Box<ParseTree>),
-}
-
-impl ParseTree {
-    pub fn cons(l: ParseTree, r: ParseTree) -> ParseTree {
-        ParseTree::Pair(Box::new(l), Box::new(r))
-    }
-}
+pub type ParseTree = Cell<char>;
 
 pub struct ParseSet(pub HashSet<ParseTree>);
 
@@ -53,8 +47,7 @@ impl ParseSet {
         let mut ret = ParseSet::new();
         for t1 in &self.0 {
             for t2 in &other.0 {
-                ret.0
-                    .insert(ParseTree::Pair(Box::new(t1.clone()), Box::new(t2.clone())));
+                ret.0.insert(cons!(t1.clone(), t2.clone()));
             }
         }
         ret
@@ -65,24 +58,14 @@ impl ParseSet {
         // See grammar::Grammer::set_optimized_cat_left for details.
         let mut ret = ParseSet::new();
         for t1 in &self.0 {
-            ret.insert(match t1 {
-                // (cons (cons (car t) (cadr t)) (cddr t))
-                // Remember, this is to *restore* the tree to its
-                // expected state.
-                ParseTree::Pair(l, r) => {
-                    let cdr: &ParseTree = &*r;
-                    match cdr {
-                        ParseTree::Pair(l1, r1) => {
-                            let car: &ParseTree = &*l;
-                            let cadr: &ParseTree = &*l1;
-                            let cddr: &ParseTree = &*r1;
-                            ParseTree::cons(ParseTree::cons(car.clone(), cadr.clone()), cddr.clone())
-                        }
-                        _ => t1.clone(),
-                    }
-                }
-                _ => t1.clone(),
-            });
+            ret.insert(
+                if t1.pairp() && t1.cdr().unwrap_or(&Cell::Nil).pairp() {
+                    cons!(t1.car().unwrap().clone(),
+                          t1.cadr().unwrap().clone(),
+                          t1.cddr().unwrap().clone())
+                } else {
+                    t1.clone()
+                })
         }
         ret
     }

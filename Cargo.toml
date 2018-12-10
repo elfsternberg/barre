@@ -11,6 +11,7 @@ render_trees = []
 
 [dependencies]
 arena = { path = "arena" }
+consy = { path = "consy" }
 
 [target.'cfg(feature = "render_trees")'.dependencies]
 dot = "0.1.4"

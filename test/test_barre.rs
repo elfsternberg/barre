@@ -1,23 +1,24 @@
 extern crate barre;
+extern crate consy;
 use barre::Barre;
-use barre::ParseTree;
+use self::consy::Cell;
 use std::collections::HashSet;
 // use language::{cat, alt, rep, tok};
 
 use barre::language::tok;
 
-fn extract_match_inner(s: &mut String, pt: &ParseTree) {
+fn extract_match_inner(s: &mut String, pt: &Cell<char>) {
     match pt {
-        ParseTree::Nil => {}
-        ParseTree::Lit(t) => s.push(t.clone()),
-        ParseTree::Pair(a, b) => {
+        Cell::Nil => {}
+        Cell::Lit(t) => s.push(t.clone()),
+        Cell::Pair(a, b) => {
             extract_match_inner(s, a);
             extract_match_inner(s, b);
         }
     }
 }
 
-fn extract_match(res: &Option<HashSet<ParseTree>>) -> Option<String> {
+fn extract_match(res: &Option<HashSet<Cell<char>>>) -> Option<String> {
     let mut ret = String::new();
     println!("{:?}", res);
     if let Some(r) = res {
