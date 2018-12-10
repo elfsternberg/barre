@@ -22,7 +22,7 @@ impl<T> Node<T> {
 
 #[derive(Debug, Clone)]
 pub struct Arena<T> {
-    arena: Vec<Node<T>>
+    pub arena: Vec<Node<T>>
 }
 
 impl<T> Arena<T> {

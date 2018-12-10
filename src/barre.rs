@@ -1,6 +1,6 @@
 use arena::{Arena, NodeId};
 use builder::{init_barre_arena, language_to_arena};
-use grammar::Grammar;
+use grammar::{Grammar, parser_default_nullable, Nullable};
 use language::Language;
 use parsesets::ParseTree;
 use std::collections::{HashMap, HashSet};
@@ -30,14 +30,21 @@ impl Barre {
         Barre::from_arena(init_barre_arena(), 1)
     }
 
+    pub fn init_nulls(&self) -> Vec<Nullable> {
+        self.arena.arena.iter().map(|t| parser_default_nullable(&t.data)).collect()
+    }
+
     pub fn parse<I>(&mut self, items: &mut I) -> Option<HashSet<ParseTree>>
     where
         I: Iterator<Item = char>,
     {
+        let nulls = self.init_nulls();
         let mut grammar = Grammar {
             arena: self.arena.clone(),
+            nulls: nulls,
             store: vec![],
             memo: HashMap::new(),
+            listeners: HashMap::new(),
             empty: self.empty,
         };
 
