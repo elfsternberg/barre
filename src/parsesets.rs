@@ -2,6 +2,12 @@ use std::collections::HashSet;
 use std::rc::Rc;
 pub type NodeId = usize;
 
+// This is basically a simple cons list, meant to be constructed and
+// cloned ad-hoc for the purpose of generating the final parse tree.
+// I'm starting to think that the external reductions will have to be
+// done with another Lit() type, for extracting the trees
+// post-processed.
+
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum ParseTree {
     Nil,

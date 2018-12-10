@@ -100,7 +100,10 @@ impl Grammar {
             }
             Parser::Eps(ref n) => {
                 let ltree = self.store[*n].clone();
-                make_node!(self, Parser::Red(Rc::new(move |_grammar, ts| ltree.permute(&ts))))
+                make_node!(self,
+                           Parser::Red(Rc::new(move |_grammar, ts| ltree.permute(&ts))),
+                           right_child_id
+                )
             }
             _ => make_node!(self, Parser::Cat, left_child_id, right_child_id),
         }
@@ -281,7 +284,8 @@ impl Grammar {
                 let ltree = self.store[*n].clone();
                 set_node!(
                     self.arena[target],
-                    Parser::Red(Rc::new(move |_grammar, ts| ltree.permute(&ts)))
+                    Parser::Red(Rc::new(move |_grammar, ts| ltree.permute(&ts))),
+                    right_child_id
                 );
                 true
             }
