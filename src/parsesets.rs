@@ -15,6 +15,7 @@ pub type NodeId = usize;
 
 pub type ParseTree = Cell<char>;
 
+#[derive(Debug)]
 pub struct ParseSet(pub HashSet<ParseTree>);
 
 pub trait ParseTreeExtractor {
@@ -60,11 +61,14 @@ impl ParseSet {
         for t1 in &self.0 {
             ret.insert(
                 if t1.pairp() && t1.cdr().unwrap_or(&Cell::Nil).pairp() {
-                    cons!(t1.car().unwrap().clone(),
-                          t1.cadr().unwrap().clone(),
+                    cons!(cons!(t1.car().unwrap().clone(), t1.cadr().unwrap().clone()),
                           t1.cddr().unwrap().clone())
                 } else {
-                    t1.clone()
+                    // Because this is a reconstruction after an
+                    // optimization, the above structure must be
+                    // correct.  If it's not, we've got bigger
+                    // problems.
+                    unreachable!()
                 })
         }
         ret

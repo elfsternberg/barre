@@ -22,6 +22,6 @@ pub use grammar::Grammar;
 
 pub use barre::Barre;
 
-mod builder;
+pub mod builder;
 
 pub mod render;

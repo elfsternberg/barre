@@ -25,6 +25,7 @@ fn extract_match(res: &Option<HashSet<Cell<char>>>) -> Option<String> {
         let mut it = r.iter();
         if let Some(pt) = it.next() {
             extract_match_inner(&mut ret, &pt);
+            println!("{:?}", ret);
             return Some(ret);
         }
     }
@@ -109,19 +110,27 @@ fn slightly_more_complex_untyped_macro() {
         tok('f')
     );
     let mut barre = Barre::from_language(&lang);
-    testpat!(barre; [
-        ("abccef", Some("abccef")),
-        ("abccef", Some("abccef")),
-        ("abddddef", Some("abddddef")),
-        ("abddddef", Some("abddddef")),
-        ("ab", None),
-        ("abcef", None),
-        ("abcdef", None),
-        ("abcceff", None),
-        ("", None),
-        ("abcddf", None)
-    ]);
+    testpat!(barre; [("abddddef", Some("abddddef"))]);
+//     testpat!(barre; [
+//         ("abccef", Some("abccef")),
+//         ("abccef", Some("abccef")),
+//         ("abddddef", Some("abddddef")),
+//         ("abddddef", Some("abddddef")),
+//         ("ab", None),
+//         ("abcef", None),
+//         ("abcdef", None),
+//         ("abcceff", None),
+//         ("", None),
+//         ("abcddf", None)
+//     ]);
 }
+
+#[test]
+fn repro() {
+    let lang = cat!(alt!(cat!(tok('b'), tok('c')), cat!(tok('d'), tok('e'))), tok('f'));
+    let mut barre = Barre::from_language(&lang);
+    testpat!(barre; [("def", Some("def"))]);
+}    
 
 #[test]
 fn graphit() {

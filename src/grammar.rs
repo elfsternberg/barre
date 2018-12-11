@@ -91,8 +91,9 @@ pub fn parser_default_nullable(parser: &Parser) -> Nullable {
     }
 }
 
+
 impl Grammar {
-    fn add(&mut self, parser: Parser) -> NodeId {
+    pub fn add(&mut self, parser: Parser) -> NodeId {
         self.nulls.push(parser_default_nullable(&parser));
         self.arena.add(parser)
     }
@@ -100,7 +101,7 @@ impl Grammar {
     // Given a token, builds and returns a new epsilon node that
     // contains a set with a parse tree of a single token.
     //
-    fn make_eps(&mut self, token: &char) -> NodeId {
+    pub fn make_eps(&mut self, token: &char) -> NodeId {
         self.store.push(ParseSet::with(Cell::Lit(token.clone())));
         let nodeid = self.store.len() - 1;
         self.add(Parser::Eps(nodeid))
@@ -109,7 +110,7 @@ impl Grammar {
     // Takes two child nodes and returns a new node built according to
     // the optimization function.
     //
-    fn make_optimized_cat(&mut self, left_child_id: NodeId, right_child_id: NodeId) -> NodeId {
+    pub fn make_optimized_cat(&mut self, left_child_id: NodeId, right_child_id: NodeId) -> NodeId {
         let left = &self.arena[left_child_id].clone();
         match left.data {
             Parser::Emp => self.empty,
@@ -570,6 +571,7 @@ impl Grammar {
     //                                          
     
     pub fn parse_tree_inner(&mut self, memo: &mut ExtractionType, nodeid: NodeId) -> ParseSet {
+        println!("{:?}", self.store);
         if let Some(cached_result) = memo.get(&nodeid) {
             return cached_result.clone();
         };
@@ -604,6 +606,12 @@ impl Grammar {
         }
     }
 
+    //  ___                    _ 
+    // | _ \__ _ _ _ ___ ___  | |
+    // |  _/ _` | '_(_-</ -_) |_|
+    // |_| \__,_|_| /__/\___| (_)
+    //                           
+    //
     pub fn parse<I>(&mut self, items: &mut I, start: NodeId) -> Option<ParseSet>
     where
         I: Iterator<Item = char>,
@@ -611,9 +619,11 @@ impl Grammar {
         let mut nodeid = start;
         let mut items = items.peekable();
         let mut count = 0;
-        // println!("A1: {:?} {:?}", self.arena, nodeid);
         loop {
-            render(&self.arena, nodeid, &format!("output-{:?}.dot", count));
+            // render(&self.arena, nodeid, &format!("output-{:?}.dot", count));
+            println!("CHAR: {:?}", items.peek());
+            self.dump(nodeid);
+            println!("");
             count += 1;
             match items.next() {
                 // If there is no next item and we are at a place where the empty string
@@ -649,6 +659,42 @@ impl Grammar {
         }
     }
 }
+
+impl Grammar {
+    pub fn inner_dump(&self, nodeid: NodeId, depth: usize) {
+        let node = self.arena[nodeid].clone();
+        let lead = format!("{lead:>width$}", lead="", width=depth * 4);
+        match node.data {
+            Parser::Emp => println!("{}{}", lead, "Emp"),
+            Parser::Eps(ref n) => println!("{}{}: {:?}", lead, "Eps", &self.store[*n]),
+            Parser::Tok(c) => println!("{}{}{}", lead, "Tok: ", c),
+            Parser::Alt => {
+                println!("{}{}", lead, "Alt");
+                self.inner_dump(node.left, depth + 1);
+                self.inner_dump(node.right, depth + 1);
+            },
+                
+            Parser::Cat => {
+                println!("{}{}", lead, "Cat");
+                self.inner_dump(node.left, depth + 1);
+                self.inner_dump(node.right, depth + 1);
+            },
+                
+            Parser::Del => println!("{}{}", lead, "Del"),
+            Parser::Red(_) => {
+                println!("{}{}", lead, "Red");
+                self.inner_dump(node.left, depth + 1);
+            },
+
+            Parser::Ukn => println!("{}{}", lead, "Ukn"),
+        };
+    }
+
+    pub fn dump(&self, nodeid: NodeId) {
+        self.inner_dump(nodeid, 0);
+    }
+}
+
 
 impl ParseTreeExtractor for Grammar {
     fn parse_tree(&mut self, start: NodeId) -> ParseSet {
