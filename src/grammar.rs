@@ -107,6 +107,20 @@ impl Grammar {
         self.add(Parser::Eps(nodeid))
     }
 
+    pub fn make_kleene_star(&mut self, child_node: NodeId) -> NodeId {
+        // L* = ε(s) ∪ (L ◦ L*)
+        let ls = self.add(Parser::Ukn);
+        let d = self.add(Parser::Cat);
+
+        self.arena[d].left = child_node;
+        self.arena[d].right = ls;
+
+        self.arena[ls].left = self.make_eps(&char::default());
+        self.arena[ls].right = d;
+        self.arena[ls].data = Parser::Alt;
+        ls
+    }
+    
     // Takes two child nodes and returns a new node built according to
     // the optimization function.
     //
@@ -585,8 +599,6 @@ impl Grammar {
                 if let Some(parent) = parent {
                     let mut listeners = self.listeners.entry(parent).or_insert(vec![]);
                     listeners.push(nodepair.0);
-                } else {
-                    unreachable!();
                 }
                 false
             }

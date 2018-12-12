@@ -1,8 +1,9 @@
+extern crate hashbrown;
 use arena::{Arena, NodeId};
 use barre::builder::{init_barre_arena};
 use barre::grammar::{Grammar, parser_default_nullable, Nullable};
 use barre::types::Parser;
-use std::collections::{HashMap};
+use hashbrown::{HashMap};
 use consy::Cell;
 
 pub fn init_nulls(arena: &Arena<Parser>) -> Vec<Nullable> {

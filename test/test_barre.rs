@@ -1,8 +1,9 @@
 extern crate barre;
 extern crate consy;
+extern crate hashbrown;
 use barre::Barre;
 use self::consy::Cell;
-use std::collections::HashSet;
+use hashbrown::HashSet;
 // use language::{cat, alt, rep, tok};
 
 use barre::language::tok;
