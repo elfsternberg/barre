@@ -129,7 +129,7 @@ fn slightly_more_complex_untyped_macro() {
 fn repro() {
     let lang = cat!(alt!(cat!(tok('b'), tok('c')), cat!(tok('d'), tok('e'))), tok('f'));
     let mut barre = Barre::from_language(&lang);
-    testpat!(barre; [("def", Some("def"))]);
+    testpat!(barre; [("bcf", Some("bcf"))]);
 }    
 
 #[test]

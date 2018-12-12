@@ -20,6 +20,7 @@ pub struct ParseSet(pub HashSet<ParseTree>);
 
 pub trait ParseTreeExtractor {
     fn parse_tree(&mut self, start: NodeId) -> ParseSet;
+    fn fetch_cached_tree(&self, target: NodeId) -> ParseSet;
 }
 
 pub type RedFn = Fn(&mut ParseTreeExtractor, ParseSet) -> ParseSet;
@@ -77,12 +78,13 @@ impl ParseSet {
     // Optimization: (p1 → f) ◦ p2 ⇒ (p1 ◦ p2) → λu. {(f({t1}) , t2) | (t1, t2) ∈ u}
     // (lambda (ts) (for*/list ([t ts][t+ (f (list (car t)))]) (cons t+ (cdr t))))))
     // See grammar::Grammer::set_optimized_cat_left for details.
-    pub fn run_after_floated_reduction(&self, _func: &Rc<RedFn>) -> ParseSet {
+    pub fn run_after_floated_reduction(&self, grammar: &mut ParseTreeExtractor, func: &Rc<RedFn>) -> ParseSet {
         // TODO: We need to store something other than ParseSets, but
         // that needs to be injectable by the user.  If you look at
         // the optimization description, the return type of f({t1}) is
         // not specified.  That's what we need infrastructure for.
-        self.clone()
+        println!("Floating: {:?}", self.0);
+        func(grammar, self.clone())
 
         /*
         let mut ret = ParseSet::new();
