@@ -3,7 +3,7 @@ use builder::{init_barre_arena, language_to_arena};
 use grammar::{Grammar, parser_default_nullable, Nullable};
 use language::Language;
 use parsesets::ParseTree;
-use std::collections::{HashMap, HashSet};
+use hashbrown::{HashMap, HashSet};
 use types::Parser;
 
 pub struct Barre {

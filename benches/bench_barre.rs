@@ -4,19 +4,22 @@ extern crate criterion;
 #[macro_use]
 extern crate barre;
 
-use criterion::Criterion;
+extern crate consy;
+extern crate hashbrown;
 
+use criterion::Criterion;
+use self::consy::Cell;
 use barre::Barre;
 use barre::ParseTree;
-use std::collections::HashSet;
+use hashbrown::HashSet;
 
 use barre::language::{alt, cat, tok};
 
-fn extract_match_inner(s: &mut String, pt: &ParseTree) {
+fn extract_match_inner(s: &mut String, pt: &Cell<char>) {
     match pt {
-        ParseTree::Nil => {}
-        ParseTree::Lit(t) => s.push(t.clone()),
-        ParseTree::Pair(a, b) => {
+        Cell::Nil => {}
+        Cell::Lit(t) => s.push(t.clone()),
+        Cell::Pair(a, b) => {
             extract_match_inner(s, a);
             extract_match_inner(s, b);
         }

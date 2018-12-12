@@ -1,8 +1,8 @@
 use arena::{Arena, Node, NodeId};
-use parsesets::{ParseSet, ParseTree, ParseTreeExtractor, RedFn};
+use parsesets::{ParseSet, ParseTreeExtractor, RedFn};
 use render::render;
 use consy::Cell;
-use std::collections::{HashMap, HashSet};
+use hashbrown::{HashMap};
 use std::rc::Rc;
 use types::Parser;
 
@@ -113,29 +113,29 @@ impl Grammar {
     pub fn make_optimized_cat(&mut self, left_child_id: NodeId, right_child_id: NodeId) -> NodeId {
         let left = &self.arena[left_child_id].clone();
 
-        println!("MOC: Entered with {:?}: {:?}, {:?}: {:?}",
-                 left_child_id, self.arena[left_child_id], right_child_id, self.arena[right_child_id]);
+//        println!("MOC: Entered with {:?}: {:?}, {:?}: {:?}",
+//                 left_child_id, self.arena[left_child_id], right_child_id, self.arena[right_child_id]);
 
         match left.data {
             Parser::Emp => {
-                println!("    MOC: Left Empty. Returning Empty.");
+                // println!("    MOC: Left Empty. Returning Empty.");
                 self.empty
             },
             Parser::Eps(ref n) => {
                 let closed_n = *n;
-                println!("    MOC: Left Epsilon. Returning Reduction pointing to {:?}", n);
+                // println!("    MOC: Left Epsilon. Returning Reduction pointing to {:?}", n);
                 make_node!(
                     self,
                     Parser::Red(Rc::new(move |grammar, ts| {
                         let ltree = grammar.fetch_cached_tree(closed_n);
-                        println!("Running Red on: {:?}", ltree);
+                        // println!("Running Red on: {:?}", ltree);
                         ltree.permute(&ts)
                     })),
                     right_child_id
                 )
             }
             Parser::Cat => {
-                println!("    MOC: Left Cat. Returning rebalanced node with reduction.");
+                // println!("    MOC: Left Cat. Returning rebalanced node with reduction.");
                 let left_cat = make_node!(
                     self,
                     Parser::Cat,
@@ -145,14 +145,14 @@ impl Grammar {
                 make_node!(
                     self,
                     Parser::Red(Rc::new(move |_grammar, ts| {
-                        println!("Rebalance from MOC: {:?}", ts);
+                        // println!("Rebalance from MOC: {:?}", ts);
                         ts.rebalance_after_seq()
                     })),
                     left_cat
                 )
             }
             _ => {
-                println!("    MOC: Other: Returning ordinary cat node.");
+                // println!("    MOC: Other: Returning ordinary cat node.");
                 make_node!(self, Parser::Cat, left_child_id, right_child_id)
             }
         }
@@ -163,15 +163,15 @@ impl Grammar {
     //
     fn make_optimized_red(&mut self, child_id: NodeId, func: Rc<RedFn>) -> NodeId {
         let child = self.arena[child_id].clone();
-        println!("MOR: Entered with {:?}: {:?}",
-                child_id, self.arena[child_id]);
+        // println!("MOR: Entered with {:?}: {:?}",
+        // child_id, self.arena[child_id]);
         match child.data {
             Parser::Emp => {
-                println!("    MOR: Child empty. Returning empty.");
+                // println!("    MOR: Child empty. Returning empty.");
                 self.empty
             }
             Parser::Eps(ref n) => {
-                println!("    MOR: Child epsilon. Returning post-processed epsilon.");
+                // println!("    MOR: Child epsilon. Returning post-processed epsilon.");
                 let val = self.store[*n].clone();
                 let res = func(self, val);
                 self.store.push(res);
@@ -179,17 +179,17 @@ impl Grammar {
                 self.add(Parser::Eps(len))
             }
             Parser::Red(ref gunc) => {
-                println!("    MOR: Child reduction. Returning composition");
+                // println!("    MOR: Child reduction. Returning composition");
                 let f = func.clone();
                 let g = gunc.clone();
                 self.add(Parser::Red(Rc::new(move |grammar, ts| {
-                    println!("Compose from MOR: {:?}", ts);
+                    // println!("Compose from MOR: {:?}", ts);
                     let t = g(grammar, ts);
                     f(grammar, t)
                 })))
             }
             _ => {
-                println!("    MOR: Other. Returning reduction node.");
+                // println!("    MOR: Other. Returning reduction node.");
                 make_node!(self, Parser::Red(func), child_id)
             },
         }
@@ -201,26 +201,26 @@ impl Grammar {
     //
     fn set_optimized_alt(&mut self, target: NodeId, left_child_id: NodeId, right_child_id: NodeId) -> bool {
         let left = self.arena[left_child_id].clone();
-        println!("SOA: Entered with {:?}: {:?}, {:?}: {:?}",
-                left_child_id, self.arena[left_child_id], right_child_id, self.arena[right_child_id]);
+        // println!("SOA: Entered with {:?}: {:?}, {:?}: {:?}",
+        //         left_child_id, self.arena[left_child_id], right_child_id, self.arena[right_child_id]);
 
         match left.data {
             // Optimization:     p   p
             Parser::Emp => {
-                println!("  SOA: Left Empty. Returning right node.");
+                // println!("  SOA: Left Empty. Returning right node.");
                 let right = &self.arena[right_child_id].clone();
                 set_node!(self.arena[target], right.data.clone(), right.left, right.right);
                 true
             }
 
             Parser::Eps(ref l) => {
-                println!("  SOA: Left epsilon.");
+                // println!("  SOA: Left epsilon.");
                 let right = self.arena[right_child_id].data.clone();
                 match right {
                     // Optimization:  ε(s1) U ε(s2)    (s1 U s2)
                     // Note that this optimization is the union of two parse forests.
                     Parser::Eps(ref r) => {
-                        println!("      SOA: Right Eps. Building union.");
+                        // println!("      SOA: Right Eps. Building union.");
                         let pos = {
                             let ret = self.store[*l].union(&self.store[*r]);
                             self.store.push(ret);
@@ -232,7 +232,7 @@ impl Grammar {
 
                     // Default: Dc(L1   L2) = Dc(L1)   Dc(L2)
                     _ => {
-                        println!("      SOA: Right other - making alt node.");
+                        // println!("      SOA: Right other - making alt node.");
                         set_node!(self.arena[target], Parser::Alt, left_child_id, right_child_id);
                         false
                     }
@@ -240,20 +240,20 @@ impl Grammar {
             }
 
             _ => {
-                println!("    SOA: Left other");
+                // println!("    SOA: Left other");
                 let mut right = self.arena[right_child_id].clone();
                 match right.data {
                     // Optimization: p       p
                     Parser::Emp => {
-                        println!("        SOA: Right Empty: Returning left node.");
+                        // println!("        SOA: Right Empty: Returning left node.");
                         set_node!(self.arena[target], left.data.clone(), left.left, left.right);
                         true
                     }
 
                     // Default: Dc (L1   L2) = Dc (L1)   Dc (L2)
                     _ => {
-                        println!("        SOA: Right Other - making alt node.");
-                        println!("Building ordinary alt with {:?}, {:?}", left_child_id, right_child_id);
+                        // println!("        SOA: Right Other - making alt node.");
+                        // println!("Building ordinary alt with {:?}, {:?}", left_child_id, right_child_id);
                         set_node!(self.arena[target], Parser::Alt, left_child_id, right_child_id);
                         false
                     }
@@ -299,14 +299,14 @@ impl Grammar {
     // to pack them all into a single epsilon.
 
     fn set_optimized_cat_left(&mut self, target: NodeId, left_child_id: NodeId, right_child_id: NodeId) -> bool {
-        println!("SOC: Entered with {:?}: {:?}, {:?}: {:?}",
-                left_child_id, self.arena[left_child_id], right_child_id, self.arena[right_child_id]);
+        // println!("SOC: Entered with {:?}: {:?}, {:?}: {:?}",
+        //         left_child_id, self.arena[left_child_id], right_child_id, self.arena[right_child_id]);
         let left = self.arena[left_child_id].clone();
         match left.data {
             // Optimization:     p
             //
             Parser::Emp => {
-                println!("    SOC: Left Empty. Returning Empty.");
+                // println!("    SOC: Left Empty. Returning Empty.");
                 set_node!(self.arena[target], Parser::Emp);
                 true
             }
@@ -322,12 +322,12 @@ impl Grammar {
             //
             Parser::Eps(ref n) => {
                 let closed_n = *n;
-                println!("    SOC: Left Epsilon. Returning Reduction pointing to {:?}", n);
+                // println!("    SOC: Left Epsilon. Returning Reduction pointing to {:?}", n);
                 set_node!(
                     self.arena[target],
                     Parser::Red(Rc::new(move |grammar, ts| {
                         let ltree = grammar.fetch_cached_tree(closed_n);
-                        println!("Running Red on: {:?}, {:?}", closed_n, ltree);
+                        // println!("Running Red on: {:?}, {:?}", closed_n, ltree);
                         ltree.permute(&ts)
                     })),
                     right_child_id
@@ -360,13 +360,13 @@ impl Grammar {
             // epsilons to traverse with every iteration.
             //
             Parser::Cat => {
-                println!("    SOC: Left Cat. Returning rebalanced node with reduction.");
+                // println!("    SOC: Left Cat. Returning rebalanced node with reduction.");
                 let deep_cat = self.make_optimized_cat(left.right, right_child_id);
                 let left_optimized_cat = self.make_optimized_cat(left.left, deep_cat);
                 set_node!(
                     self.arena[target],
                     Parser::Red(Rc::new(move |_grammar, ts| {
-                        println!("Rebalance from SOC: {:?}", ts);
+                        // println!("Rebalance from SOC: {:?}", ts);
                         ts.rebalance_after_seq()
                     })),
                     left_optimized_cat
@@ -385,12 +385,12 @@ impl Grammar {
             // because the infrastructure for user-defined assemblies
             // isn't done yet.
             Parser::Red(ref g) => {
-                println!("    SOC: Left Red. Floating reduction above rebalancing.");
+                // println!("    SOC: Left Red. Floating reduction above rebalancing.");
                 let gunc = g.clone();
                 set_node!(
                     self.arena[target],
                     Parser::Red(Rc::new(move |grammar, ts| {
-                        println!("Running Red on floated reduction after SOC: {:?}", ts);
+                        // println!("Running Red on floated reduction after SOC: {:?}", ts);
                         ts.run_after_floated_reduction(grammar, &gunc)
                     })),
                     self.make_optimized_cat(left.left, right_child_id)
@@ -411,16 +411,16 @@ impl Grammar {
     //
     fn set_optimized_red(&mut self, target: NodeId, child_id: NodeId, source_id: NodeId) -> bool {
         let child = self.arena[child_id].clone();
-        println!("SOR: Entered with {:?}: {:?}",
-                child_id, self.arena[child_id]);
+        // println!("SOR: Entered with {:?}: {:?}",
+        //         child_id, self.arena[child_id]);
         match child.data {
             Parser::Emp => {
-                println!("    SOR: Child empty. Setting to empty.");
+                // println!("    SOR: Child empty. Setting to empty.");
                 self.arena[target].data = Parser::Emp;
                 true
             }
             Parser::Eps(ref d) => {
-                println!("    SOR: Child epsilon. Returning post-processed epsilon.");
+                // println!("    SOR: Child epsilon. Returning post-processed epsilon.");
                 if let Parser::Red(ref func) = self.arena[source_id].data.clone() {
                     let s = self.store[*d].clone();
                     let t = func(self, s);
@@ -433,17 +433,17 @@ impl Grammar {
             }
             Parser::Red(ref gunc) => {
                 // [red-tag (red-node-set! node (node-child1 child) (compose1 func (node-child2 child))) #t]
-                println!("    SOR: Child reduction. Returning composition");
+                // println!("    SOR: Child reduction. Returning composition");
                 if let Parser::Red(ref func) = self.arena[source_id].data.clone() {
-                    println!("Red Reduce: {:?} {:?}", source_id, child_id);
+                    // println!("Red Reduce: {:?} {:?}", source_id, child_id);
                     let f = func.clone();
                     let g = gunc.clone();
                     set_node!(
                         self.arena[target],
                         Parser::Red(Rc::new(move |grammar, ts| {
-                            println!("Compose! {:?}", ts);
+                            // println!("Compose! {:?}", ts);
                             let t = g(grammar, ts);
-                            println!("Result: {:?}", t);
+                            // println!("Result: {:?}", t);
                             f(grammar, t)
                         })),
                         child.left
@@ -454,9 +454,9 @@ impl Grammar {
                 }
             }
             _ => {
-                println!("    SOR: Other. Returning reduction node.");
+                // println!("    SOR: Other. Returning reduction node.");
                 if let Parser::Red(ref func) = self.arena[source_id].data.clone() {
-                    println!("        SOR: Duplicating function for new node.");
+                    // println!("        SOR: Duplicating function for new node.");
                     set_node!(self.arena[target], Parser::Red(func.clone()), child_id);
                     false
                 } else {
@@ -470,7 +470,7 @@ impl Grammar {
     // derivative of the node passed in.
     //
     fn derive(&mut self, nodeid: NodeId, token: &char) -> NodeId { 
-        println!("Processing node {:?}", nodeid);
+        // println!("Processing node {:?}", nodeid);
         {
             if let Some(cached_node) = self.memo.get(&(nodeid, token.clone())) {
                 return *cached_node;
@@ -486,10 +486,10 @@ impl Grammar {
                 Parser::Tok(ref t) => {
                     if *t == *token {
                         let n = self.make_eps(token);
-                        println!("Making epsilon for {:?} at {:?}", token, n);
+                        // println!("Making epsilon for {:?} at {:?}", token, n);
                         n
                     } else {
-                        println!("Token unrecognized, making empty");
+                        // println!("Token unrecognized, making empty");
                         self.empty
                     }
                 },
@@ -506,45 +506,45 @@ impl Grammar {
 
         let _ = match node.data {
             Parser::Alt => {
-                println!("Building optimized alt! this: {:?} next: {:?}", nodeid, next_derivative);
-                println!("Before: {:?}, {:?}", self.arena[node.left], self.arena[node.right]);
+                // println!("Building optimized alt! this: {:?} next: {:?}", nodeid, next_derivative);
+                // println!("Before: {:?}, {:?}", self.arena[node.left], self.arena[node.right]);
                 let l = self.derive(node.left, token);
                 let r = self.derive(node.right, token);
-                println!("After: {:?}, {:?}", self.arena[l], self.arena[r]);
+                // println!("After: {:?}, {:?}", self.arena[l], self.arena[r]);
                 self.set_optimized_alt(next_derivative, l, r)
             }
 
             Parser::Cat => {
                 if self.nullable(node.left) {
-                    println!("{:03} Building nullable cat! next: {:?}, right: {:?}",
-                             nodeid, self.arena[nodeid], next_derivative);
+                    // println!("{:03} Building nullable cat! next: {:?}, right: {:?}",
+                    //          nodeid, self.arena[nodeid], next_derivative);
 
                     let l = self.derive(node.left, token);
                     let r = self.derive(node.right, token);
-                    println!("{:03} Continuing nullable cat! left:\n     {:?} {:?}\n    right: {:?} {:?}",
-                             nodeid, l, self.arena[l], r, self.arena[r]);
+                    // println!("{:03} Continuing nullable cat! left:\n     {:?} {:?}\n    right: {:?} {:?}",
+                    //          nodeid, l, self.arena[l], r, self.arena[r]);
                     
                     let sac_l = node.left.clone();
                     let red = self.make_optimized_red(
                         r,
                         Rc::new(move |grammar, ts2| {
                             let ts1 = grammar.parse_tree(sac_l);
-                            println!("Running Inner Red on: {:?} {:?}", sac_l, ts1);
+                            // println!("Running Inner Red on: {:?} {:?}", sac_l, ts1);
                             ts1.permute(&ts2)
                         }),
                     );
                     let cat = self.make_optimized_cat(l, node.right);
                     self.set_optimized_alt(next_derivative, red, cat)
                 } else {
-                    println!("{:03} Building optimized cat! next: {:?}, right: {:?}", nodeid, next_derivative, self.arena[node.right]);
+                    // println!("{:03} Building optimized cat! next: {:?}, right: {:?}", nodeid, next_derivative, self.arena[node.right]);
                     let l = self.derive(node.left, token);
-                    println!("{:03} Building optimized cat! left: {:?}", nodeid, self.arena[l]);
+                    // println!("{:03} Building optimized cat! left: {:?}", nodeid, self.arena[l]);
                     self.set_optimized_cat_left(next_derivative, l, node.right)
                 }
             }
 
             Parser::Red(_) => {
-                println!("Deriving reduction {:?}", nodeid);
+                // println!("Deriving reduction {:?}", nodeid);
                 let l = self.derive(node.left, token);
                 self.set_optimized_red(next_derivative, l, nodeid)
             }
@@ -552,9 +552,9 @@ impl Grammar {
             _ => false,
         };
 
-        println!("Intermediate made for {:?}", next_derivative);
-        self.dump(next_derivative);
-        println!("");
+        // println!("Intermediate made for {:?}", next_derivative);
+        // self.dump(next_derivative);
+        // println!("");
         next_derivative
     }
 
@@ -664,7 +664,7 @@ impl Grammar {
     //                                          
     
     pub fn parse_tree_inner(&mut self, memo: &mut ExtractionType, nodeid: NodeId) -> ParseSet {
-        println!("{:?}", self.store);
+        // println!("{:?}", self.store);
         if let Some(cached_result) = memo.get(&nodeid) {
             return cached_result.clone();
         };
@@ -714,8 +714,8 @@ impl Grammar {
         let mut count = 0;
         loop {
             // render(&self.arena, nodeid, &format!("output-{:?}.dot", count));
-            println!("CHAR: {:?}", items.peek());
-            self.dump(nodeid);
+            // println!("CHAR: {:?}", items.peek());
+            // self.dump(nodeid);
             count += 1;
             match items.next() {
                 // If there is no next item and we are at a place where the empty string
@@ -773,7 +773,7 @@ impl Grammar {
             },
                 
             Parser::Del => println!("{}{}", lead, "Del"),
-            Parser::Red(ref a) => {
+            Parser::Red(_) => {
                 println!("{}{}", lead, "Red");
                 self.inner_dump(node.left, depth + 1);
             },

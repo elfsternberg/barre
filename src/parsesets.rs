@@ -1,6 +1,5 @@
-use std::collections::HashSet;
+use hashbrown::HashSet;
 
-#[macro_use]
 use consy::cons;
 
 use consy::Cell;
@@ -83,7 +82,7 @@ impl ParseSet {
         // that needs to be injectable by the user.  If you look at
         // the optimization description, the return type of f({t1}) is
         // not specified.  That's what we need infrastructure for.
-        println!("Floating: {:?}", self.0);
+        // println!("Floating: {:?}", self.0);
         func(grammar, self.clone())
         /*
         let mut ret = ParseSet::new();

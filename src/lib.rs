@@ -2,6 +2,7 @@
 
 extern crate arena;
 extern crate consy;
+extern crate hashbrown;
 
 // #[cfg(feature = "render_trees")]
 // extern crate dot;
