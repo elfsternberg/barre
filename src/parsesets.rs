@@ -85,14 +85,13 @@ impl ParseSet {
         // not specified.  That's what we need infrastructure for.
         println!("Floating: {:?}", self.0);
         func(grammar, self.clone())
-
         /*
         let mut ret = ParseSet::new();
         for t1 in &self.0 {
             let car: &ParseTree = &*t1;
             match car {
                 ParseTree::Nil => {},
-                ParseTree::Lit(ref t) => ret.insert(func(car.clone())),
+                ParseTree::Lit(ref t) => ret.insert(func(grammar, car.clone())),
                 ParseTree::Pair(l1, r1) => {
                     let car: &ParseTree = &*l1;
                     let cdr: &ParseTree = &*r1;
