@@ -1,9 +1,9 @@
 use arena::{Arena, NodeId};
-use barre::builder::{init_barre_arena};
-use barre::grammar::{Grammar, parser_default_nullable, Nullable};
+use barre::builder::init_barre_arena;
+use barre::grammar::{parser_default_nullable, Grammar, Nullable};
 use barre::types::Parser;
-use hashbrown::{HashMap};
 use consy::Cell;
+use hashbrown::HashMap;
 
 pub fn init_nulls(arena: &Arena<Parser>) -> Vec<Nullable> {
     arena.iter().map(|t| parser_default_nullable(&t.data)).collect()
@@ -12,7 +12,7 @@ pub fn init_nulls(arena: &Arena<Parser>) -> Vec<Nullable> {
 pub fn init_grammar() -> Grammar {
     let arena = init_barre_arena();
     let nulls = init_nulls(&arena);
-    
+
     Grammar {
         arena: arena,
         nulls: nulls,
@@ -37,7 +37,13 @@ fn beer() {
     let eer = grammar.make_optimized_cat(eestar, r);
     let beer = grammar.make_optimized_cat(b, eer);
 
-    let p = grammar.parse(&mut "beeeer".chars(), beer).unwrap().0.into_iter().next().unwrap();
+    let p = grammar
+        .parse(&mut "beeeer".chars(), beer)
+        .unwrap()
+        .0
+        .into_iter()
+        .next()
+        .unwrap();
     println!("{:?}", p);
     assert!(true);
 }

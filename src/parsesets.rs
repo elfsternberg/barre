@@ -59,17 +59,18 @@ impl ParseSet {
         // See grammar::Grammer::set_optimized_cat_left for details.
         let mut ret = ParseSet::new();
         for t1 in &self.0 {
-            ret.insert(
-                if t1.pairp() && t1.cdr().unwrap_or(&Cell::Nil).pairp() {
-                    cons!(cons!(t1.car().unwrap().clone(), t1.cadr().unwrap().clone()),
-                          t1.cddr().unwrap().clone())
-                } else {
-                    // Because this is a reconstruction after an
-                    // optimization, the above structure must be
-                    // correct.  If it's not, we've got bigger
-                    // problems.
-                    unreachable!()
-                })
+            ret.insert(if t1.pairp() && t1.cdr().unwrap_or(&Cell::Nil).pairp() {
+                cons!(
+                    cons!(t1.car().unwrap().clone(), t1.cadr().unwrap().clone()),
+                    t1.cddr().unwrap().clone()
+                )
+            } else {
+                // Because this is a reconstruction after an
+                // optimization, the above structure must be
+                // correct.  If it's not, we've got bigger
+                // problems.
+                unreachable!()
+            })
         }
         ret
     }

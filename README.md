@@ -19,20 +19,21 @@ link mentioned above, complete with the explosion in time and space.
 
 ## Status
 
-Right now the smallest, most primitive possible engine is working.
-`Token`, `Alt`, `Cat`, and `Repeat` are implemented. `Any`, `Range` and
-`NegativeRange` have been implemented.  Macros for ease of machine
-construction have been implemneted.  No optimizations have been applied.
+Barre has passed a major developmental milestone: it now recognizes 
+recursive regular expressions with all of the optimizations from 
+Might & Adams.  It doesn't do anything *useful* with them, but it
+does recognize them.
 
-### [Plan Your Commits](https://dev.to/rpalo/plan-your-commits)
+### [Plan Your Commits](https://dev.to/rpalo/plan-your-commits) (aka TODO)
 
-* Implement Anchor
-* Implement Capture Group
-* Implement Backreferences
-* Implement higher-level Tokenization
-* Implement Language that recognizes PCRE/PCRE-Light
-* Implement Language that recognizes [Rosie](https://gitlab.com/rosie-pattern-language/rosie/)
-* Implement PEG-like engine that produces "smart" parse trees (c.f. [PegJS](https://pegjs.org/))
+* Implement Adam's right-side optimizations for initial grammars.
+* Implement a type-safe reduction return handler.
+* Implement Sulzmann's POSIX disambiguation rule to reduce the ParseSets to a single ParseTree.
+** Investigate: Is this the same thing as the [CUT](https://help.sap.com/doc/abapdocu_731_index_htm/7.31/en-US/abenregex_search.htm) operator?
+* Implement Darais's "LanguageOfLanguages" layer.
+* Implement a Regex dialectal parser on top of Barre
+* Implement alternative dialectal parsers
+* Implement a PEG.
 
 ## Description
 

@@ -1,8 +1,8 @@
 extern crate barre;
 extern crate consy;
 extern crate hashbrown;
-use barre::Barre;
 use self::consy::Cell;
+use barre::Barre;
 use hashbrown::HashSet;
 // use language::{cat, alt, rep, tok};
 
@@ -112,18 +112,18 @@ fn slightly_more_complex_untyped_macro() {
     );
     let mut barre = Barre::from_language(&lang);
     testpat!(barre; [("abddddef", Some("abddddef"))]);
-//     testpat!(barre; [
-//         ("abccef", Some("abccef")),
-//         ("abccef", Some("abccef")),
-//         ("abddddef", Some("abddddef")),
-//         ("abddddef", Some("abddddef")),
-//         ("ab", None),
-//         ("abcef", None),
-//         ("abcdef", None),
-//         ("abcceff", None),
-//         ("", None),
-//         ("abcddf", None)
-//     ]);
+    //     testpat!(barre; [
+    //         ("abccef", Some("abccef")),
+    //         ("abccef", Some("abccef")),
+    //         ("abddddef", Some("abddddef")),
+    //         ("abddddef", Some("abddddef")),
+    //         ("ab", None),
+    //         ("abcef", None),
+    //         ("abcdef", None),
+    //         ("abcceff", None),
+    //         ("", None),
+    //         ("abcddf", None)
+    //     ]);
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn repro() {
     let lang = cat!(alt!(cat!(tok('b'), tok('c')), cat!(tok('d'), tok('e'))), tok('f'));
     let mut barre = Barre::from_language(&lang);
     testpat!(barre; [("bcf", Some("bcf"))]);
-}    
+}
 
 #[test]
 fn graphit() {

@@ -1,9 +1,9 @@
 use arena::{Arena, NodeId};
 use builder::{init_barre_arena, language_to_arena};
-use grammar::{Grammar, parser_default_nullable, Nullable};
+use grammar::{parser_default_nullable, Grammar, Nullable};
+use hashbrown::{HashMap, HashSet};
 use language::Language;
 use parsesets::ParseTree;
-use hashbrown::{HashMap, HashSet};
 use types::Parser;
 
 pub struct Barre {

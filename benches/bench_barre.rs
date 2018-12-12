@@ -7,10 +7,10 @@ extern crate barre;
 extern crate consy;
 extern crate hashbrown;
 
-use criterion::Criterion;
 use self::consy::Cell;
 use barre::Barre;
 use barre::ParseTree;
+use criterion::Criterion;
 use hashbrown::HashSet;
 
 use barre::language::{alt, cat, tok};
@@ -73,17 +73,17 @@ fn bench_more_complex_expression(c: &mut Criterion) {
             let mut barre = Barre::from_language(&lang);
 
             testpat!(barre; [
-            ("abccef", Some("abccef")),
-            ("abccef", Some("abccef")),
-            ("abddddef", Some("abddddef")),
-            ("abddddef", Some("abddddef")),
-            ("ab", None),
-            ("abcef", None),
-            ("abcdef", None),
-            ("abcceff", None),
-            ("", None),
-            ("abcddf", None)
-        ]);
+                ("abccef", Some("abccef")),
+                ("abccef", Some("abccef")),
+                ("abddddef", Some("abddddef")),
+                ("abddddef", Some("abddddef")),
+                ("ab", None),
+                ("abcef", None),
+                ("abcdef", None),
+                ("abcceff", None),
+                ("", None),
+                ("abcddf", None)
+            ]);
         })
     });
 }
