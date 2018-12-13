@@ -24,6 +24,14 @@ pub trait ParseTreeExtractor {
 
 pub type RedFn = Fn(&mut ParseTreeExtractor, ParseSet) -> ParseSet;
 
+macro_rules! parseset {
+    ( $( $x:expr ),* ) => {{
+        let mut h = HashSet::new();
+        $( h.insert($x); )*
+        ParseSet(h)
+    }};
+}
+
 impl ParseSet {
     pub fn new() -> ParseSet {
         ParseSet(HashSet::new())
@@ -75,32 +83,21 @@ impl ParseSet {
         ret
     }
 
+    // [red-tag (make-red-node (make-seq-node (node-child1 left) right)
+    //     (let ([f (node-child2 left)])
+    //         (lambda (ts) (for*/list ([t ts][t+ (f (list (car t)))]) (cons t+ (cdr t))))))]
+
     // Optimization: (p1 → f) ◦ p2 ⇒ (p1 ◦ p2) → λu. {(f({t1}) , t2) | (t1, t2) ∈ u}
-    // (lambda (ts) (for*/list ([t ts][t+ (f (list (car t)))]) (cons t+ (cdr t))))))
     // See grammar::Grammer::set_optimized_cat_left for details.
+    //
     pub fn run_after_floated_reduction(&self, grammar: &mut ParseTreeExtractor, func: &Rc<RedFn>) -> ParseSet {
-        // TODO: We need to store something other than ParseSets, but
-        // that needs to be injectable by the user.  If you look at
-        // the optimization description, the return type of f({t1}) is
-        // not specified.  That's what we need infrastructure for.
-        // println!("Floating: {:?}", self.0);
-        func(grammar, self.clone())
-        /*
         let mut ret = ParseSet::new();
         for t1 in &self.0 {
-            let car: &ParseTree = &*t1;
-            match car {
-                ParseTree::Nil => {},
-                ParseTree::Lit(ref t) => ret.insert(func(grammar, car.clone())),
-                ParseTree::Pair(l1, r1) => {
-                    let car: &ParseTree = &*l1;
-                    let cdr: &ParseTree = &*r1;
-                    ret.insert(ParseTree::Pair(func(car.clone()), cdr.clone()))
-                }
+            for t2 in func(grammar, parseset!(t1.car().unwrap().clone())).0 {
+                ret.insert(cons!(t2, t1.cdr().unwrap().clone()))
             }
         }
         ret
-         */
     }
 }
 
