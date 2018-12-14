@@ -6,22 +6,9 @@ use barre::types::Parser;
 use consy::Cell;
 use hashbrown::HashMap;
 
-pub fn init_nulls(arena: &Arena<Parser>) -> Vec<Nullable> {
-    arena.iter().map(|t| parser_default_nullable(&t.data)).collect()
-}
-
 pub fn init_grammar() -> Grammar {
     let arena = init_barre_arena();
-    let nulls = init_nulls(&arena);
-
-    Grammar {
-        arena: arena,
-        nulls: nulls,
-        store: vec![],
-        memo: HashMap::new(),
-        listeners: HashMap::new(),
-        empty: 1,
-    }
+    Grammar::new(&arena, 1, 1)
 }
 
 #[test]
@@ -30,6 +17,7 @@ fn simple_cat() {
     let a = grammar.add(Parser::Tok('a'));
     let b = grammar.add(Parser::Tok('b'));
     let c = grammar.make_optimized_cat(a, b);
+    grammar.start = c;
     println!("{:?}", grammar.arena);
     assert!(true);
 }
@@ -42,8 +30,9 @@ fn left_optimized_cat_for_cat() {
     let d = grammar.add(Parser::Tok('c'));
     let e = grammar.make_optimized_cat(c, d);
     println!("{:?}", grammar.arena);
+    grammar.start = e;
     let p = grammar
-        .parse(&mut "abc".chars(), e)
+        .parse(&mut "abc".chars())
         .unwrap()
         .0
         .into_iter()
@@ -58,9 +47,10 @@ fn left_optimized_cat_for_eps() {
     let mut grammar = init_grammar();
     let (a, b) = (grammar.make_eps(&'a'), grammar.add(Parser::Tok('b')));
     let c = grammar.make_optimized_cat(a, b);
+    grammar.start = c;
     println!("{:?}", grammar.arena);
     let p = grammar
-        .parse(&mut "b".chars(), c)
+        .parse(&mut "b".chars())
         .unwrap()
         .0
         .into_iter()

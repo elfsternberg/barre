@@ -11,16 +11,7 @@ pub fn init_nulls(arena: &Arena<Parser>) -> Vec<Nullable> {
 
 pub fn init_grammar() -> Grammar {
     let arena = init_barre_arena();
-    let nulls = init_nulls(&arena);
-
-    Grammar {
-        arena: arena,
-        nulls: nulls,
-        store: vec![],
-        memo: HashMap::new(),
-        listeners: HashMap::new(),
-        empty: 1,
-    }
+    Grammar::new(&arena, 1, 1)
 }
 
 #[test]
@@ -36,9 +27,10 @@ fn beer() {
     let r = grammar.add(Parser::Tok('r'));
     let eer = grammar.make_optimized_cat(eestar, r);
     let beer = grammar.make_optimized_cat(b, eer);
-
+    grammar.start = beer;
+    grammar.optimize(beer);
     let p = grammar
-        .parse(&mut "beeeer".chars(), beer)
+        .parse(&mut "beeeer".chars())
         .unwrap()
         .0
         .into_iter()

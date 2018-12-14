@@ -42,6 +42,9 @@ pub struct Grammar {
 
     // A convenience pointer to an empty parser.
     pub empty: NodeId,
+
+    // The head node in the originating grammar
+    pub start: NodeId,
 }
 
 // Deliberate mechanism to build things in the correct order, so that
@@ -111,7 +114,103 @@ pub fn parser_default_nullable(parser: &Parser) -> Nullable {
     }
 }
 
+pub fn init_nulls(arena: &Arena<Parser>) -> Vec<Nullable> {
+    arena.iter().map(|t| parser_default_nullable(&t.data)).collect()
+}
+
 impl Grammar {
+    pub fn new(arena: &Arena<Parser>, start: NodeId, empty: NodeId) -> Grammar {
+        let nulls = init_nulls(&arena);
+        let mut grammar = Grammar {
+            arena: arena.clone(),
+            nulls: nulls,
+            store: vec![],
+            memo: HashMap::new(),
+            listeners: HashMap::new(),
+            empty: empty,
+            start: start
+        };
+        grammar.optimize(start);
+        grammar
+    }
+
+    fn optimize_internal(&mut self, nodeid: NodeId, memo: &mut HashMap<NodeId, bool>) {
+        if memo.get(&nodeid).unwrap_or(&false).clone() {
+            return;
+        }
+        let node = self.arena[nodeid].clone();
+
+        memo.insert(nodeid, true);
+        let reoptimize = match node.data {
+            Parser::Alt => {
+                self.optimize_internal(node.left, memo);
+                self.optimize_internal(node.right, memo);
+                self.set_optimized_alt(nodeid, node.left, node.right)
+            }
+            
+            Parser::Red(_) => {
+                self.optimize_internal(node.left, memo);
+                false
+            }
+            
+            Parser::Cat => {
+                self.optimize_internal(node.left, memo);
+                self.optimize_internal(node.right, memo);
+                let lopt = self.set_optimized_cat_left(nodeid, node.left, node.right);
+                let ropt = {
+                    let right = self.arena[node.right].clone();
+                    match right.data {
+                        Parser::Emp => {
+                            set_node!(self.arena[nodeid], Parser::Emp);
+                            true
+                        }
+
+                        Parser::Eps(ref n) => {
+                            let closed_n = *n;
+                            set_node!(
+                                self.arena[nodeid],
+                                Parser::Red(Rc::new(move |grammar, ts| {
+                                    let ltree = grammar.fetch_cached_tree(closed_n);
+                                    ltree.permute(&ts)
+                                })),
+                                node.right);
+                            true
+                        }
+
+                        Parser::Red(ref g) => {
+                            let gunc = g.clone();
+                            set_node!(
+                                self.arena[nodeid],
+                                Parser::Red(Rc::new(
+                                    move |grammar, ts| ts.run_after_floated_reduction(grammar, &gunc)
+                                )),
+                                self.make_optimized_cat(node.left, right.left)
+                            );
+                            true
+                        }
+
+                        _ => { false }
+                    }
+                };
+                lopt || ropt
+            }
+
+            _ => { false }
+        };
+
+        if reoptimize {
+            memo.insert(nodeid, false);
+            self.optimize_internal(nodeid, memo);
+        } else {
+            self.nullable(nodeid);
+        }
+    }
+
+    pub fn optimize(&mut self, nodeid: NodeId) {
+        let mut memo: HashMap<NodeId, bool> = HashMap::new();
+        self.optimize_internal(nodeid, &mut memo);
+    }
+
     pub fn add(&mut self, parser: Parser) -> NodeId {
         self.nulls.push(parser_default_nullable(&parser));
         self.arena.add(parser)
@@ -500,7 +599,6 @@ impl Grammar {
                         r,
                         Rc::new(move |grammar, ts2| {
                             let ts1 = grammar.parse_tree(sac_l);
-                            // println!("Running Inner Red on: {:?} {:?}", sac_l, ts1);
                             ts1.permute(&ts2)
                         }),
                     );
@@ -662,11 +760,11 @@ impl Grammar {
     // |_| \__,_|_| /__/\___| (_)
     //
     //
-    pub fn parse<I>(&mut self, items: &mut I, start: NodeId) -> Option<ParseSet>
+    pub fn parse<I>(&mut self, items: &mut I) -> Option<ParseSet>
     where
         I: Iterator<Item = char>,
     {
-        let mut nodeid = start;
+        let mut nodeid = self.start;
         let mut items = items.peekable();
         loop {
             match items.next() {

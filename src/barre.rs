@@ -39,16 +39,8 @@ impl Barre {
         I: Iterator<Item = char>,
     {
         let nulls = self.init_nulls();
-        let mut grammar = Grammar {
-            arena: self.arena.clone(),
-            nulls: nulls,
-            store: vec![],
-            memo: HashMap::new(),
-            listeners: HashMap::new(),
-            empty: self.empty,
-        };
-
-        match grammar.parse(items, self.start) {
+        let mut grammar = Grammar::new(&self.arena, self.start, self.empty);
+        match grammar.parse(items) {
             Some(parseset) => Some(parseset.0),
             None => None,
         }
