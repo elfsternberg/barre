@@ -58,3 +58,15 @@ Given what I now know about regular expression construction, I very much
 like Perl 6's approach to language construction.  It does mean that
 we'll need 'Barre | Barre' and 'Barre + Barre' operators (union and
 sequencing), but that doesn't seem impossible.
+
+---
+
+Insight: ParseSets and ParseTrees are never *compared*, they are only
+*constructed* or *modified*.  The *type* of a ParseTree(Cell) matters
+only insofar as how it gets into an EPS or a result.
+
+Therefore: the *type* of a Cell<T> matters only insofar as to what we're
+gonna do with it.  The content of the parsetrees don't matter so much to
+the internal rebalancers-- but they *do* matter to the concatenator,
+yes?
+

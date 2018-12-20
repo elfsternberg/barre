@@ -4,9 +4,6 @@ extern crate arena;
 extern crate consy;
 extern crate hashbrown;
 
-// #[cfg(feature = "render_trees")]
-// extern crate dot;
-
 pub mod types;
 
 #[macro_use]
@@ -24,4 +21,3 @@ pub use grammar::Grammar;
 
 pub use barre::Barre;
 
-pub mod render;
