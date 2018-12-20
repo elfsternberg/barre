@@ -1,51 +1,12 @@
 use arena::{Arena, Node, NodeId};
 use consy::Cell;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
+use language::Language;
+use std::iter::FromIterator;
+use std::ops::{Index, IndexMut};
 use parsesets::{ParseSet, ParseTreeExtractor, RedFn};
-use render::render;
 use std::rc::Rc;
 use types::Parser;
-
-#[derive(Copy, Clone)]
-pub enum Nullable {
-    Accept,
-    Reject,
-    InProgress,
-    Unvisited,
-}
-
-pub struct NodePair<'a>(NodeId, &'a mut Node<Parser>);
-
-pub struct Grammar {
-    // The memory arena in which our graph is stored.  All "nodes" are
-    // merely indexes into the arena to other nodes.
-    pub arena: Arena<Parser>,
-
-    // A parallel object storing whether or not the node is nullable or
-    // has been proven nullable.  TODO: Roll this into the struct.
-    pub nulls: Vec<Nullable>,
-
-    // A collection of products of the parsing process.
-    pub store: Vec<ParseSet>,
-
-    // A memoized version of the (node, token) -> node tree, so that
-    // in the event of recursion, we don't really recurse, we just
-    // use this thing.
-    pub memo: HashMap<(NodeId, char), NodeId>,
-
-    // A map of nodes to the list of nodes which are interested in
-    // their nullability.  When a node's nullability changes, all of
-    // its children must be reconsidered, but this is much faster than
-    // re-analyzing the entire nullability lattice with every
-    // character.
-    pub listeners: HashMap<NodeId, Vec<NodeId>>,
-
-    // A convenience pointer to an empty parser.
-    pub empty: NodeId,
-
-    // The head node in the originating grammar
-    pub start: NodeId,
-}
 
 // Deliberate mechanism to build things in the correct order, so that
 // the compiler's habit of building temporaries is circumvented and
@@ -85,17 +46,206 @@ macro_rules! set_node {
     }};
 }
 
-macro_rules! iff {
-    ($condition: expr, $_true:expr, $_false:expr) => {
-        if $condition {
-            $_true
-        } else {
-            $_false
-        }
-    };
+/// A grammar represent the list of rules that describe
+/// a regular expression: they're the individual atoms
+/// of concatenate, alternate, repeat, token, empty and
+/// null.
+
+#[derive(Clone)]
+pub struct Grammar {
+    // The memory arena in which our graph is stored.  All "nodes" are
+    // merely indexes into the arena to other nodes.
+    pub arena: Arena<Parser>,
+
+    // While it's possible to just have a lot of empties, they're
+    // utterly indistinguishable from one another, so having just one
+    // every empty result can point to is a small bit of savings.
+    pub empty: NodeId,
+
+    // Every language has a starting point, the head of the tree
+    // of processing instructions.
+    pub start: NodeId,
 }
 
-type ExtractionType = HashMap<(NodeId), ParseSet>;
+impl Grammar {
+    pub fn raw() -> Grammar {
+        Grammar {
+            arena: Arena::new(),
+            empty: 0,
+            start: 0,
+        }
+    }
+
+    pub fn new() -> Grammar {
+        let mut grammar = Grammar::raw();
+        let _ = grammar.make_emp();
+        grammar.empty = grammar.make_emp();
+        grammar.start = grammar.empty;
+        grammar
+    }
+
+    pub fn from_language(lang: &Language) -> Grammar {
+        let mut grammar = Grammar::new();
+
+        fn language_handler(lang: &Language, g: &mut Grammar) -> NodeId {
+            match lang {
+                Language::Epsilon => g.make_eps_from_token(&char::default()),
+
+                Language::Token(ref t) => g.make_tok(&t.0.clone()),
+
+                Language::Alt(ref node) => {
+                    let l = language_handler(&node.0, g);
+                    let r = language_handler(&node.1, g);
+                    g.make_alt(l, r)
+                }
+
+                Language::Cat(ref node) => {
+                    let l = language_handler(&node.0, g);
+                    let r = language_handler(&node.1, g);
+                    g.make_cat(l, r)
+                }
+            }
+        }
+
+        let start = language_handler(&lang, &mut grammar);
+        grammar.start = start;
+        grammar
+    }
+
+    //  _  _         _        ___             _               _
+    // | \| |___  __| |___   / __|___ _ _  __| |_ _ _ _  _ __| |_ ___ _ _ ___
+    // | .` / _ \/ _` / -_) | (__/ _ \ ' \(_-<  _| '_| || / _|  _/ _ \ '_(_-<
+    // |_|\_\___/\__,_\___|  \___\___/_||_/__/\__|_|  \_,_\__|\__\___/_| /__/
+    //
+    //
+    pub fn make_emp(&mut self) -> NodeId {
+        make_node!(self.arena, Parser::Emp)
+    }
+
+    pub fn make_eps(&mut self, token: &Rc<ParseSet>) -> NodeId {
+        make_node!(self.arena, Parser::Eps(token.clone()))
+    }
+
+    pub fn make_eps_from_token(&mut self, token: &char) -> NodeId {
+        self.make_eps(&Rc::new(parseset!(Cell::Lit(token.clone()))))
+    }
+
+    pub fn make_tok(&mut self, token: &char) -> NodeId {
+        make_node!(self.arena, Parser::Tok(token.clone()))
+    }
+
+    pub fn make_alt(&mut self, left: NodeId, right: NodeId) -> NodeId {
+        make_node!(self.arena, Parser::Alt, left, right)
+    }
+
+    pub fn make_cat(&mut self, left: NodeId, right: NodeId) -> NodeId {
+        make_node!(self.arena, Parser::Cat, left, right)
+    }
+
+    pub fn make_red(&mut self, left: NodeId, func: Rc<RedFn>) -> NodeId {
+        make_node!(self.arena, Parser::Red(func), left)
+    }
+
+    pub fn make_ukn(&mut self) -> NodeId {
+        make_node!(self.arena, Parser::Ukn)
+    }
+
+    // Kleene star, only using recursion instead of iteration.
+    pub fn make_rep(&mut self, child_node: NodeId) -> NodeId {
+        // L* = ε() ∪ (L ◦ L*)
+        let lstar = self.make_ukn();
+        let right = self.make_cat(child_node, lstar);
+        let epsto = self.make_eps_from_token(&char::default());
+        self.set_alt(lstar, epsto, right);
+        lstar
+    }
+
+    //  _  _         _       __  __      _        _
+    // | \| |___  __| |___  |  \/  |_  _| |_ __ _| |_ ___ _ _ ___
+    // | .` / _ \/ _` / -_) | |\/| | || |  _/ _` |  _/ _ \ '_(_-<
+    // |_|\_\___/\__,_\___| |_|  |_|\_,_|\__\__,_|\__\___/_| /__/
+    //
+    pub fn set_emp(&mut self, target: NodeId) {
+        set_node!(self.arena[target], Parser::Emp);
+    }
+
+    pub fn set_eps(&mut self, target: NodeId, token: &Rc<ParseSet>) {
+        set_node!(self.arena[target], Parser::Eps(token.clone()));
+    }
+
+    pub fn set_eps_from_token(&mut self, target: NodeId, token: char) {
+        self.set_eps(target, &Rc::new(parseset!(Cell::Lit(token.clone()))));
+    }
+
+    pub fn set_tok(&mut self, target: NodeId, token: &char) {
+        set_node!(self.arena[target], Parser::Tok(token.clone()));
+    }
+
+    pub fn set_alt(&mut self, target: NodeId, left: NodeId, right: NodeId) {
+        set_node!(self.arena[target], Parser::Alt, left, right);
+    }
+
+    pub fn set_cat(&mut self, target: NodeId, left: NodeId, right: NodeId) {
+        set_node!(self.arena[target], Parser::Cat, left, right);
+    }
+
+    pub fn set_red(&mut self, target: NodeId, left: NodeId, func: Rc<RedFn>) {
+        set_node!(self.arena[target], Parser::Red(func), left);
+    }
+
+    pub fn set_ukn(&mut self, target: NodeId) {
+        set_node!(self.arena[target], Parser::Ukn);
+    }
+}
+
+impl Index<NodeId> for Grammar {
+    type Output = Node<Parser>;
+    fn index<'a>(&'a self, index: NodeId) -> &'a Node<Parser> {
+        debug_assert!(index < self.arena.len());
+        &self.arena[index]
+    }
+}
+
+impl IndexMut<NodeId> for Grammar {
+    fn index_mut<'a>(&'a mut self, index: NodeId) -> &'a mut Node<Parser> {
+        debug_assert!(index < self.arena.len());
+        &mut self.arena[index]
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Nullable {
+    Accept,
+    Reject,
+    InProgress,
+    Unvisited,
+}
+
+pub struct NodePair<'a>(NodeId, &'a mut Node<Parser>);
+
+pub struct Deriver {
+    // The memory arena in which our graph is stored.  All "nodes" are
+    // merely indexes into the arena to other nodes.
+    pub grammar: Grammar,
+
+    // A memoized version of the (node, token) -> node tree, so that
+    // in the event of recursion, we don't really recurse, we just
+    // use this thing.
+    pub memo: HashMap<(NodeId, char), NodeId>,
+
+    // A parallel object storing whether or not the node is nullable or
+    // has been proven nullable.
+    pub nulls: HashMap<NodeId, Nullable>,
+
+    // A map of nodes to the list of nodes which are interested in
+    // their nullability.  When a node's nullability changes, all of
+    // its children must be reconsidered, but this is much faster than
+    // re-analyzing the entire nullability lattice with every
+    // character.
+    pub listeners: HashMap<NodeId, Vec<NodeId>>,
+}
+
+type ExtractionType = HashMap<NodeId, ParseSet>;
 
 // Default rules for various parsers.  Used to intialize the
 // nullability tracking vector.  TODO: Roll this over to the parser
@@ -108,37 +258,77 @@ pub fn parser_default_nullable(parser: &Parser) -> Nullable {
         Parser::Tok(_) => Nullable::Reject,
         Parser::Alt => Nullable::Unvisited,
         Parser::Cat => Nullable::Unvisited,
-        Parser::Del => Nullable::Unvisited,
         Parser::Red(_) => Nullable::Unvisited,
         Parser::Ukn => Nullable::Unvisited,
     }
 }
 
-pub fn init_nulls(arena: &Arena<Parser>) -> Vec<Nullable> {
-    arena.iter().map(|t| parser_default_nullable(&t.data)).collect()
+pub fn init_nulls(arena: &Arena<Parser>) -> HashMap<NodeId, Nullable> {
+    HashMap::from_iter(
+        arena
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (i, parser_default_nullable(&t.data))))
 }
 
-impl Grammar {
-    pub fn new(arena: &Arena<Parser>, start: NodeId, empty: NodeId) -> Grammar {
-        let nulls = init_nulls(&arena);
-        let mut grammar = Grammar {
-            arena: arena.clone(),
+macro_rules! make_with_null {
+    ($s:expr, $e:expr) => {{
+        let n = $e;
+        $s.nulls.insert(n, parser_default_nullable(&$s.grammar[n].data));
+        n
+    }};
+}
+
+impl Deriver {
+    pub fn new(grammar: &Grammar) -> Deriver {
+        let nulls = init_nulls(&grammar.arena);
+        let mut deriver = Deriver {
+            grammar: grammar.clone(),
             nulls: nulls,
-            store: vec![],
             memo: HashMap::new(),
             listeners: HashMap::new(),
-            empty: empty,
-            start: start
         };
-        grammar.optimize(start);
-        grammar
+        deriver.optimize(grammar.start);
+        deriver
+    }
+
+    pub fn make_emp(&mut self) -> NodeId {
+        make_with_null!(self, self.grammar.make_emp())
+    }
+
+    pub fn make_eps(&mut self, token: &Rc<ParseSet>) -> NodeId {
+        make_with_null!(self, self.grammar.make_eps(token))
+    }
+
+    pub fn make_eps_from_token(&mut self, token: &char) -> NodeId {
+        self.make_eps(&Rc::new(parseset!(Cell::Lit(token.clone()))))
+    }
+
+    pub fn make_tok(&mut self, token: &char) -> NodeId {
+        make_with_null!(self, self.grammar.make_tok(token))
+    }
+
+    pub fn make_alt(&mut self, left: NodeId, right: NodeId) -> NodeId {
+        make_with_null!(self, self.grammar.make_alt(left, right))
+    }
+
+    pub fn make_cat(&mut self, left: NodeId, right: NodeId) -> NodeId {
+        make_with_null!(self, self.grammar.make_cat(left, right))
+    }
+
+    pub fn make_red(&mut self, left: NodeId, func: Rc<RedFn>) -> NodeId {
+        make_with_null!(self, self.grammar.make_red(left, func))
+    }
+
+    pub fn make_ukn(&mut self) -> NodeId {
+        make_with_null!(self, self.grammar.make_ukn())
     }
 
     fn optimize_internal(&mut self, nodeid: NodeId, memo: &mut HashMap<NodeId, bool>) {
         if memo.get(&nodeid).unwrap_or(&false).clone() {
             return;
         }
-        let node = self.arena[nodeid].clone();
+        let node = self.grammar[nodeid].clone();
 
         memo.insert(nodeid, true);
         let reoptimize = match node.data {
@@ -147,55 +337,53 @@ impl Grammar {
                 self.optimize_internal(node.right, memo);
                 self.set_optimized_alt(nodeid, node.left, node.right)
             }
-            
-            Parser::Red(_) => {
-                self.optimize_internal(node.left, memo);
-                false
-            }
-            
+
             Parser::Cat => {
                 self.optimize_internal(node.left, memo);
                 self.optimize_internal(node.right, memo);
                 let lopt = self.set_optimized_cat_left(nodeid, node.left, node.right);
                 let ropt = {
-                    let right = self.arena[node.right].clone();
+                    let right = self.grammar[node.right].clone();
                     match right.data {
                         Parser::Emp => {
-                            set_node!(self.arena[nodeid], Parser::Emp);
+                            self.grammar.set_emp(nodeid);
                             true
                         }
 
-                        Parser::Eps(ref n) => {
-                            let closed_n = *n;
-                            set_node!(
-                                self.arena[nodeid],
-                                Parser::Red(Rc::new(move |grammar, ts| {
-                                    let ltree = grammar.fetch_cached_tree(closed_n);
-                                    ltree.permute(&ts)
-                                })),
-                                node.right);
+                        Parser::Eps(ref eps) => {
+                            let eps_rc = eps.clone();
+                            self.grammar.set_red(
+                                nodeid,
+                                node.right,
+                                Rc::new(move |_grammar, ts| (*eps_rc).permute(&ts)),
+                            );
                             true
                         }
 
                         Parser::Red(ref g) => {
                             let gunc = g.clone();
-                            set_node!(
-                                self.arena[nodeid],
-                                Parser::Red(Rc::new(
-                                    move |grammar, ts| ts.run_after_floated_reduction(grammar, &gunc)
-                                )),
-                                self.make_optimized_cat(node.left, right.left)
+                            let child_node = self.make_optimized_cat(node.left, right.left);
+                            self.grammar.set_red(
+                                nodeid,
+                                child_node,
+                                Rc::new(move |grammar, ts| ts.run_after_floated_reduction(grammar, &gunc)),
                             );
                             true
                         }
 
-                        _ => { false }
+                        _ => false,
                     }
                 };
                 lopt || ropt
             }
 
-            _ => { false }
+            // TODO: This is incomplete. Look into why.
+            Parser::Red(_) => {
+                self.optimize_internal(node.left, memo);
+                false
+            }
+
+            _ => false,
         };
 
         if reoptimize {
@@ -211,73 +399,27 @@ impl Grammar {
         self.optimize_internal(nodeid, &mut memo);
     }
 
-    pub fn add(&mut self, parser: Parser) -> NodeId {
-        self.nulls.push(parser_default_nullable(&parser));
-        self.arena.add(parser)
-    }
-
-    //   ___             _               _
-    //  / __|___ _ _  __| |_ _ _ _  _ __| |_ ___ _ _ ___
-    // | (__/ _ \ ' \(_-<  _| '_| || / _|  _/ _ \ '_(_-<
-    //  \___\___/_||_/__/\__|_|  \_,_\__|\__\___/_| /__/
-    //
-
-    // Given a token, builds and returns a new epsilon node that
-    // contains a set with a parse tree of a single token.
-    //
-    pub fn make_eps(&mut self, token: &char) -> NodeId {
-        self.store.push(ParseSet::with(Cell::Lit(token.clone())));
-        let nodeid = self.store.len() - 1;
-        self.add(Parser::Eps(nodeid))
-    }
-
-    pub fn make_kleene_star(&mut self, child_node: NodeId) -> NodeId {
-        // L* = ε(s) ∪ (L ◦ L*)
-        let ls = self.add(Parser::Ukn);
-        let d = self.add(Parser::Cat);
-
-        self.arena[d].left = child_node;
-        self.arena[d].right = ls;
-
-        self.arena[ls].left = self.make_eps(&char::default());
-        self.arena[ls].right = d;
-        self.arena[ls].data = Parser::Alt;
-        ls
-    }
-
     // Takes two child nodes and returns a new node built according to
     // the optimization function.
     //
     pub fn make_optimized_cat(&mut self, left_child_id: NodeId, right_child_id: NodeId) -> NodeId {
-        let left = &self.arena[left_child_id].clone();
+        let left = &self.grammar[left_child_id].clone();
 
         match left.data {
-            Parser::Emp => self.empty,
-            Parser::Eps(ref n) => {
-                let closed_n = *n;
-                make_node!(
-                    self,
-                    Parser::Red(Rc::new(move |grammar, ts| {
-                        let ltree = grammar.fetch_cached_tree(closed_n);
-                        ltree.permute(&ts)
-                    })),
-                    right_child_id
-                )
+            Parser::Emp => self.grammar.empty,
+
+            Parser::Eps(ref eps) => {
+                let closed_pt = eps.clone();
+                self.make_red(right_child_id, Rc::new(move |_grammar, ts| (*closed_pt).permute(&ts)))
             }
+
             Parser::Cat => {
-                let left_cat = make_node!(
-                    self,
-                    Parser::Cat,
-                    left.left,
-                    make_node!(self, Parser::Cat, left.right, right_child_id)
-                );
-                make_node!(
-                    self,
-                    Parser::Red(Rc::new(move |_grammar, ts| ts.rebalance_after_seq())),
-                    left_cat
-                )
+                let left_right_cat = self.make_cat(left.right, right_child_id);
+                let left_cat = self.make_cat(left.left, left_right_cat);
+                self.make_red(left_cat, Rc::new(move |_grammar, ts| ts.rebalance_after_seq()))
             }
-            _ => make_node!(self, Parser::Cat, left_child_id, right_child_id),
+
+            _ => self.make_cat(left_child_id, right_child_id),
         }
     }
 
@@ -285,25 +427,29 @@ impl Grammar {
     // according to the optimization function.
     //
     fn make_optimized_red(&mut self, child_id: NodeId, func: Rc<RedFn>) -> NodeId {
-        let child = self.arena[child_id].clone();
+        let child = self.grammar[child_id].clone();
+
         match child.data {
-            Parser::Emp => self.empty,
-            Parser::Eps(ref n) => {
-                let val = self.store[*n].clone();
-                let res = func(self, val);
-                self.store.push(res);
-                let len = self.store.len() - 1;
-                self.add(Parser::Eps(len))
+            Parser::Emp => self.grammar.empty,
+
+            Parser::Eps(ref eps) => {
+                let res = func(self, &*eps);
+                self.make_eps(&Rc::new(res))
             }
+
             Parser::Red(ref gunc) => {
                 let f = func.clone();
                 let g = gunc.clone();
-                self.add(Parser::Red(Rc::new(move |grammar, ts| {
-                    let t = g(grammar, ts);
-                    f(grammar, t)
-                })))
+                self.make_red(
+                    child.left,
+                    Rc::new(move |grammar, ts| {
+                        let t = g(grammar, ts);
+                        f(grammar, &t)
+                    }),
+                )
             }
-            _ => make_node!(self, Parser::Red(func), child_id),
+
+            _ => self.make_red(child_id, func),
         }
     }
 
@@ -312,51 +458,47 @@ impl Grammar {
     // operation was an optimization.
     //
     fn set_optimized_alt(&mut self, target: NodeId, left_child_id: NodeId, right_child_id: NodeId) -> bool {
-        let left = self.arena[left_child_id].clone();
+        let left = self.grammar[left_child_id].clone();
 
         match left.data {
             // Optimization:     p   p
             Parser::Emp => {
-                let right = &self.arena[right_child_id].clone();
-                set_node!(self.arena[target], right.data.clone(), right.left, right.right);
+                let right = &self.grammar[right_child_id].clone();
+                set_node!(self.grammar[target], right.data.clone(), right.left, right.right);
                 true
             }
 
-            Parser::Eps(ref l) => {
-                let right = self.arena[right_child_id].data.clone();
+            Parser::Eps(ref leps) => {
+                let right = self.grammar[right_child_id].data.clone();
                 match right {
                     // Optimization:  ε(s1) U ε(s2) -> (s1 U s2)
                     // Note that this optimization is the union of two parse forests.
-                    Parser::Eps(ref r) => {
-                        let pos = {
-                            let ret = self.store[*l].union(&self.store[*r]);
-                            self.store.push(ret);
-                            self.store.len() - 1
-                        };
-                        set_node!(self.arena[target], Parser::Eps(pos));
+                    Parser::Eps(ref reps) => {
+                        let ret = leps.union(&reps);
+                        self.grammar.set_eps(target, &Rc::new(ret));
                         true
                     }
 
                     // Default: Dc(L1   L2) = Dc(L1)   Dc(L2)
                     _ => {
-                        set_node!(self.arena[target], Parser::Alt, left_child_id, right_child_id);
+                        self.grammar.set_alt(target, left_child_id, right_child_id);
                         false
                     }
                 }
             }
 
             _ => {
-                let mut right = self.arena[right_child_id].clone();
+                let mut right = self.grammar[right_child_id].clone();
                 match right.data {
                     // Optimization: p       p
                     Parser::Emp => {
-                        set_node!(self.arena[target], left.data.clone(), left.left, left.right);
+                        set_node!(self.grammar[target], left.data.clone(), left.left, left.right);
                         true
                     }
 
                     // Default: Dc (L1   L2) = Dc (L1)   Dc (L2)
                     _ => {
-                        set_node!(self.arena[target], Parser::Alt, left_child_id, right_child_id);
+                        self.grammar.set_alt(target, left_child_id, right_child_id);
                         false
                     }
                 }
@@ -401,12 +543,12 @@ impl Grammar {
     // to pack them all into a single epsilon.
 
     fn set_optimized_cat_left(&mut self, target: NodeId, left_child_id: NodeId, right_child_id: NodeId) -> bool {
-        let left = self.arena[left_child_id].clone();
+        let left = self.grammar[left_child_id].clone();
         match left.data {
             // Optimization:     p
             //
             Parser::Emp => {
-                set_node!(self.arena[target], Parser::Emp);
+                self.grammar.set_emp(target);
                 true
             }
 
@@ -419,15 +561,12 @@ impl Grammar {
             // traversal of concatenative epsilons with each new
             // character.
             //
-            Parser::Eps(ref n) => {
-                let closed_n = *n;
-                set_node!(
-                    self.arena[target],
-                    Parser::Red(Rc::new(move |grammar, ts| {
-                        let ltree = grammar.fetch_cached_tree(closed_n);
-                        ltree.permute(&ts)
-                    })),
-                    right_child_id
+            Parser::Eps(ref eps) => {
+                let closed_eps = eps.clone();
+                self.grammar.set_red(
+                    target,
+                    right_child_id,
+                    Rc::new(move |_grammar, ts| closed_eps.permute(&ts)),
                 );
                 true
             }
@@ -459,13 +598,12 @@ impl Grammar {
             Parser::Cat => {
                 let deep_cat = self.make_optimized_cat(left.right, right_child_id);
                 let left_optimized_cat = self.make_optimized_cat(left.left, deep_cat);
-                set_node!(
-                    self.arena[target],
-                    Parser::Red(Rc::new(move |_grammar, ts| {
-                        // println!("Rebalance from SOC: {:?}", ts);
+                self.grammar.set_red(
+                    target,
+                    left_optimized_cat,
+                    Rc::new(move |_grammar, ts| {
                         ts.rebalance_after_seq()
-                    })),
-                    left_optimized_cat
+                    }),
                 );
                 true
             }
@@ -482,18 +620,17 @@ impl Grammar {
             // isn't done yet.
             Parser::Red(ref g) => {
                 let gunc = g.clone();
-                set_node!(
-                    self.arena[target],
-                    Parser::Red(Rc::new(
-                        move |grammar, ts| ts.run_after_floated_reduction(grammar, &gunc)
-                    )),
-                    self.make_optimized_cat(left.left, right_child_id)
+                let child = self.make_optimized_cat(left.left, right_child_id);
+                self.grammar.set_red(
+                    target,
+                    child,
+                    Rc::new(move |grammar, ts| ts.run_after_floated_reduction(grammar, &gunc)),
                 );
                 true
             }
 
             _ => {
-                set_node!(self.arena[target], Parser::Cat, left_child_id, right_child_id);
+                self.grammar.set_cat(target, left_child_id, right_child_id);
                 false
             }
         }
@@ -504,43 +641,45 @@ impl Grammar {
     // the operation was an optimization.
     //
     fn set_optimized_red(&mut self, target: NodeId, child_id: NodeId, source_id: NodeId) -> bool {
-        let child = self.arena[child_id].clone();
+        let child = self.grammar[child_id].clone();
+
         match child.data {
             Parser::Emp => {
-                self.arena[target].data = Parser::Emp;
+                self.grammar.set_emp(target);
                 true
             }
-            Parser::Eps(ref d) => {
-                if let Parser::Red(ref func) = self.arena[source_id].data.clone() {
-                    let s = self.store[*d].clone();
-                    let t = func(self, s);
-                    self.store.push(t);
-                    set_node!(self.arena[target], Parser::Eps(self.store.len() - 1));
+
+            Parser::Eps(ref eps) => {
+                if let Parser::Red(ref func) = self.grammar[source_id].data.clone() {
+                    let t = func(self, eps);
+                    self.grammar.set_eps(target, &Rc::new(t));
                     true
                 } else {
                     unreachable!()
                 }
             }
+
             Parser::Red(ref gunc) => {
-                if let Parser::Red(ref func) = self.arena[source_id].data.clone() {
+                if let Parser::Red(ref func) = self.grammar[source_id].data.clone() {
                     let f = func.clone();
                     let g = gunc.clone();
-                    set_node!(
-                        self.arena[target],
-                        Parser::Red(Rc::new(move |grammar, ts| {
+                    self.grammar.set_red(
+                        target,
+                        child.left,
+                        Rc::new(move |grammar, ts| {
                             let t = g(grammar, ts);
-                            f(grammar, t)
-                        })),
-                        child.left
+                            f(grammar, &t)
+                        }),
                     );
                     true
                 } else {
                     unreachable!()
                 }
             }
+
             _ => {
-                if let Parser::Red(ref func) = self.arena[source_id].data.clone() {
-                    set_node!(self.arena[target], Parser::Red(func.clone()), child_id);
+                if let Parser::Red(ref func) = self.grammar[source_id].data.clone() {
+                    self.grammar.set_red(target, child_id, func.clone());
                     false
                 } else {
                     unreachable!()
@@ -559,20 +698,24 @@ impl Grammar {
             };
         };
 
-        let node = &self.arena[nodeid].clone();
+        let node = &self.grammar[nodeid].clone();
+
         let next_derivative = {
             match node.data {
-                Parser::Emp => self.empty,
-                Parser::Eps(_) => self.empty,
-                Parser::Del => self.empty,
+                Parser::Emp => self.grammar.empty,
+
+                Parser::Eps(_) => self.grammar.empty,
+
                 Parser::Tok(ref t) => {
                     if *t == *token {
-                        self.make_eps(token)
+                        self.make_eps_from_token(token)
                     } else {
-                        self.empty
+                        self.grammar.empty
                     }
                 }
-                Parser::Alt | Parser::Cat | Parser::Red(_) => self.add(Parser::Ukn),
+
+                Parser::Alt | Parser::Cat | Parser::Red(_) => self.make_ukn(),
+
                 Parser::Ukn => unreachable!(),
             }
         };
@@ -594,6 +737,7 @@ impl Grammar {
                 if self.nullable(node.left) {
                     let l = self.derive(node.left, token);
                     let r = self.derive(node.right, token);
+
                     let sac_l = node.left.clone();
                     let red = self.make_optimized_red(
                         r,
@@ -634,16 +778,18 @@ impl Grammar {
         // mutate the local node then write a copy of it back to the
         // language.
 
-        let mut node = self.arena[nodeid].clone();
+        let mut node = self.grammar[nodeid].clone();
         let mut node_pair = NodePair(nodeid, &mut node);
         self.cached_nullable(&mut node_pair, None, &Nullable::Unvisited)
     }
 
     fn cached_nullable(&mut self, nodepair: &mut NodePair, parent: Option<NodeId>, status: &Nullable) -> bool {
-        let nullable = &self.nulls[nodepair.0].clone();
+        let nullable = &self.nulls[&nodepair.0].clone();
         match nullable {
             Nullable::Accept => true,
+
             Nullable::Reject => false,
+
             Nullable::InProgress => {
                 if let Some(parent) = parent {
                     let mut listeners = self.listeners.entry(parent).or_insert(vec![]);
@@ -651,62 +797,64 @@ impl Grammar {
                 }
                 false
             }
+
             Nullable::Unvisited => {
-                self.nulls[nodepair.0] = Nullable::InProgress;
+                self.nulls.insert(nodepair.0, Nullable::InProgress);
                 if self.compute_notify_nullable(nodepair, status) {
-                    true
-                } else {
-                    // BUG? Are we manipulating a copy?
-                    if let Some(parent) = parent {
-                        let listeners = &mut self.listeners.entry(parent).or_insert(vec![]);
-                        listeners.push(nodepair.0);
-                    }
-                    false
+                    return true
+                } 
+
+                if let Some(parent) = parent {
+                    let listeners = &mut self.listeners.entry(parent).or_insert(vec![]);
+                    listeners.push(nodepair.0);
                 }
+                false
             }
         }
     }
 
     fn compute_notify_nullable(&mut self, nodepair: &mut NodePair, status: &Nullable) -> bool {
-        if self.base_nullable(nodepair, status) {
-            {
-                self.nulls[nodepair.0] = Nullable::Accept;
-                if let Some((_, listeners)) = self.listeners.remove_entry(&nodepair.0) {
-                    for childnode in listeners {
-                        let mut node = self.arena[childnode].clone();
-                        let mut newnp = NodePair(childnode.clone(), &mut node);
-                        self.compute_notify_nullable(&mut newnp, &Nullable::Accept);
-                    }
-                }
-                self.arena[nodepair.0] = nodepair.1.clone();
-            }
-            true
-        } else {
-            false
+        if ! self.base_nullable(nodepair, status) {
+            return false;
         }
+
+        self.nulls.insert(nodepair.0, Nullable::Accept);
+        if let Some((_, listeners)) = self.listeners.remove_entry(&nodepair.0) {
+            for childnode in listeners {
+                let mut node = self.grammar[childnode].clone();
+                let mut newnp = NodePair(childnode.clone(), &mut node);
+                self.compute_notify_nullable(&mut newnp, &Nullable::Accept);
+            }
+        }
+        self.grammar[nodepair.0] = nodepair.1.clone();
+        true
     }
 
     fn base_nullable(&mut self, nodepair: &mut NodePair, status: &Nullable) -> bool {
         let nodeid = nodepair.0;
         match &nodepair.1.data {
             Parser::Emp => false,
+
             Parser::Eps(_) => true,
+
             Parser::Tok(_) => false,
+
             Parser::Alt => {
-                let mut leftnode = self.arena[nodepair.1.left].clone();
-                let mut rightnode = self.arena[nodepair.1.right].clone();
+                let mut leftnode = self.grammar[nodepair.1.left].clone();
+                let mut rightnode = self.grammar[nodepair.1.right].clone();
                 self.cached_nullable(&mut NodePair(nodepair.1.left, &mut leftnode), Some(nodeid), status)
                     || self.cached_nullable(&mut NodePair(nodepair.1.right, &mut rightnode), Some(nodeid), status)
             }
+
             Parser::Cat => {
-                let mut leftnode = self.arena[nodepair.1.left].clone();
-                let mut rightnode = self.arena[nodepair.1.right].clone();
+                let mut leftnode = self.grammar[nodepair.1.left].clone();
+                let mut rightnode = self.grammar[nodepair.1.right].clone();
                 self.cached_nullable(&mut NodePair(nodepair.1.left, &mut leftnode), Some(nodeid), status)
                     && self.cached_nullable(&mut NodePair(nodepair.1.right, &mut rightnode), Some(nodeid), status)
             }
-            Parser::Del => true,
+
             Parser::Red(_) => {
-                let mut leftnode = self.arena[nodepair.1.left].clone();
+                let mut leftnode = self.grammar[nodepair.1.left].clone();
                 self.cached_nullable(&mut NodePair(nodepair.1.left, &mut leftnode), Some(nodeid), status)
             }
             Parser::Ukn => unreachable!(),
@@ -728,26 +876,30 @@ impl Grammar {
             return ParseSet::new();
         };
 
-        let node = &self.arena[nodeid].clone();
+        let node = &self.grammar[nodeid].clone();
 
         match &node.data {
             Parser::Emp => ParseSet::new(),
+
             Parser::Tok(_) => ParseSet::new(),
-            Parser::Eps(ref c) => self.store[*c].clone(),
-            Parser::Del => self.parse_tree_inner(memo, node.left),
+
+            Parser::Eps(ref eps) => (**eps).clone(),
 
             Parser::Alt => {
                 let p1 = self.parse_tree_inner(memo, node.left);
                 p1.union(&self.parse_tree_inner(memo, node.right))
             }
+
             Parser::Cat => {
                 let p1 = self.parse_tree_inner(memo, node.left);
                 p1.permute(&self.parse_tree_inner(memo, node.right))
             }
-            Parser::Red(ref f) => {
+
+            Parser::Red(ref red) => {
                 let t_tree = self.parse_tree_inner(memo, node.left);
-                (*f)(self, t_tree)
+                (*red)(self, &t_tree)
             }
+
             Parser::Ukn => {
                 unreachable!("Uknnown node in parsetree operation. CANTHAPPEN");
             }
@@ -764,7 +916,7 @@ impl Grammar {
     where
         I: Iterator<Item = char>,
     {
-        let mut nodeid = self.start;
+        let mut nodeid = self.grammar.start;
         let mut items = items.peekable();
         loop {
             match items.next() {
@@ -778,13 +930,15 @@ impl Grammar {
 
                 Some(ref c) => {
                     let np = self.derive(nodeid, c);
-                    let nl = &self.arena[np].data.clone();
+                    let nl = &self.grammar[np].data.clone();
                     match nl {
                         Parser::Emp => break None,
+
                         Parser::Eps(_) => match items.peek() {
                             Some(_) => break None,
                             None => break Some(self.parse_tree(np)),
                         },
+
                         // Essentially, for all other possibilities, we
                         // just need to recurse across our nodes until
                         // we hit Empty or Epsilon, and then we're
@@ -799,13 +953,9 @@ impl Grammar {
     }
 }
 
-impl ParseTreeExtractor for Grammar {
+impl ParseTreeExtractor for Deriver {
     fn parse_tree(&mut self, start: NodeId) -> ParseSet {
         let mut memo: ExtractionType = HashMap::new();
         self.parse_tree_inner(&mut memo, start)
-    }
-
-    fn fetch_cached_tree(&self, target: NodeId) -> ParseSet {
-        self.store[target].clone()
     }
 }

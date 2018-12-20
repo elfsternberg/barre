@@ -12,6 +12,7 @@ pub mod types;
 #[macro_use]
 pub mod language;
 
+#[macro_use]
 mod parsesets;
 pub use parsesets::ParseTree;
 
@@ -22,7 +23,5 @@ pub mod barre;
 pub use grammar::Grammar;
 
 pub use barre::Barre;
-
-pub mod builder;
 
 pub mod render;

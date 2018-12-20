@@ -19,11 +19,11 @@ pub struct ParseSet(pub HashSet<ParseTree>);
 
 pub trait ParseTreeExtractor {
     fn parse_tree(&mut self, start: NodeId) -> ParseSet;
-    fn fetch_cached_tree(&self, target: NodeId) -> ParseSet;
 }
 
-pub type RedFn = Fn(&mut ParseTreeExtractor, ParseSet) -> ParseSet;
+pub type RedFn = Fn(&mut ParseTreeExtractor, &ParseSet) -> ParseSet;
 
+#[macro_export]
 macro_rules! parseset {
     ( $( $x:expr ),* ) => {{
         let mut h = HashSet::new();
@@ -93,7 +93,7 @@ impl ParseSet {
     pub fn run_after_floated_reduction(&self, grammar: &mut ParseTreeExtractor, func: &Rc<RedFn>) -> ParseSet {
         let mut ret = ParseSet::new();
         for t1 in &self.0 {
-            for t2 in func(grammar, parseset!(t1.car().unwrap().clone())).0 {
+            for t2 in func(grammar, &parseset!(t1.car().unwrap().clone())).0 {
                 ret.insert(cons!(t2, t1.cdr().unwrap().clone()))
             }
         }

@@ -13,7 +13,7 @@ use barre::ParseTree;
 use criterion::Criterion;
 use hashbrown::HashSet;
 
-use barre::language::{alt, cat, tok};
+use barre::language::{tok};
 
 fn extract_match_inner(s: &mut String, pt: &Cell<char>) {
     match pt {

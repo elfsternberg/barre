@@ -1,38 +1,24 @@
-use arena::{Arena, NodeId};
-use barre::builder::init_barre_arena;
-use barre::grammar::{parser_default_nullable, Grammar, Nullable};
-use barre::types::Parser;
-use consy::Cell;
-use hashbrown::HashMap;
-
-pub fn init_nulls(arena: &Arena<Parser>) -> Vec<Nullable> {
-    arena.iter().map(|t| parser_default_nullable(&t.data)).collect()
-}
-
-pub fn init_grammar() -> Grammar {
-    let arena = init_barre_arena();
-    Grammar::new(&arena, 1, 1)
-}
+use barre::Grammar;
+use barre::Barre;
 
 #[test]
 fn beer() {
-    let mut grammar = init_grammar();
-    let b = grammar.add(Parser::Tok('b'));
+    let mut grammar = Grammar::new();
+    let b = grammar.make_tok(&'b');
     let ee = {
-        let e1 = grammar.add(Parser::Tok('e'));
-        let e2 = grammar.add(Parser::Tok('e'));
-        grammar.make_optimized_cat(e1, e2)
+        let e1 = grammar.make_tok(&'e');
+        let e2 = grammar.make_tok(&'e');
+        grammar.make_cat(e1, e2)
     };
-    let eestar = grammar.make_kleene_star(ee);
-    let r = grammar.add(Parser::Tok('r'));
-    let eer = grammar.make_optimized_cat(eestar, r);
-    let beer = grammar.make_optimized_cat(b, eer);
+    let eestar = grammar.make_rep(ee);
+    let r = grammar.make_tok(&'r');
+    let eer = grammar.make_cat(eestar, r);
+    let beer = grammar.make_cat(b, eer);
     grammar.start = beer;
-    grammar.optimize(beer);
-    let p = grammar
+    let mut barre = Barre::from_grammar(grammar);
+    let p = barre
         .parse(&mut "beeeer".chars())
         .unwrap()
-        .0
         .into_iter()
         .next()
         .unwrap();

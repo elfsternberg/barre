@@ -1,46 +1,30 @@
-use arena::{Arena, NodeId};
-use builder::{init_barre_arena, language_to_arena};
-use grammar::{parser_default_nullable, Grammar, Nullable};
-use hashbrown::{HashMap, HashSet};
+use grammar::{Grammar, Deriver};
+use hashbrown::HashSet;
 use language::Language;
 use parsesets::ParseTree;
-use types::Parser;
 
-pub struct Barre {
-    arena: Arena<Parser>,
-    start: NodeId,
-    empty: NodeId,
-}
+pub struct Barre(Grammar);
 
 impl Barre {
-    pub fn from_arena(arena: Arena<Parser>, start: NodeId) -> Barre {
-        Barre {
-            arena: arena,
-            start: start,
-            empty: 1,
-        }
-    }
-
     pub fn from_language(lang: &Language) -> Barre {
-        let arena_start = language_to_arena(lang);
-        Barre::from_arena(arena_start.0, arena_start.1)
+        Barre(Grammar::from_language(lang))
     }
 
     pub fn new() -> Barre {
-        Barre::from_arena(init_barre_arena(), 1)
+        Barre(Grammar::new())
     }
 
-    pub fn init_nulls(&self) -> Vec<Nullable> {
-        self.arena.iter().map(|t| parser_default_nullable(&t.data)).collect()
+    pub fn from_grammar(gram: Grammar) -> Barre {
+        Barre(gram)
     }
+        
 
     pub fn parse<I>(&mut self, items: &mut I) -> Option<HashSet<ParseTree>>
     where
         I: Iterator<Item = char>,
     {
-        let nulls = self.init_nulls();
-        let mut grammar = Grammar::new(&self.arena, self.start, self.empty);
-        match grammar.parse(items) {
+        let mut deriver = Deriver::new(&self.0);
+        match deriver.parse(items) {
             Some(parseset) => Some(parseset.0),
             None => None,
         }

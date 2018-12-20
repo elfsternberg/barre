@@ -1,4 +1,4 @@
-use parsesets::{NodeId, RedFn};
+use parsesets::{ParseSet, RedFn};
 use std::fmt;
 use std::rc::Rc;
 
@@ -32,14 +32,13 @@ impl<T> Siaa for T where
 
 #[derive(Clone)]
 pub enum Parser {
-    Ukn,
     Emp,
-    Eps(NodeId),
-    Del,
+    Eps(Rc<ParseSet>),
     Tok(char),
     Alt,
     Cat,
     Red(Rc<RedFn>),
+    Ukn,
     //Rep, // Repetition
     //Its  // Intersection - This *and* that
     //Neg  // Negation - *Not* this
@@ -63,7 +62,6 @@ impl fmt::Debug for Parser {
             Parser::Tok(c) => write!(f, "Tok: {:?}", c),
             Parser::Alt => write!(f, "Alt"),
             Parser::Cat => write!(f, "Cat"),
-            Parser::Del => write!(f, "Del"),
             Parser::Red(_) => write!(f, "Red"),
             Parser::Ukn => write!(f, "Ukn"),
         }
