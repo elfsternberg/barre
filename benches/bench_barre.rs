@@ -5,15 +5,15 @@ extern crate criterion;
 extern crate barre;
 
 extern crate consy;
-extern crate hashbrown;
+extern crate indexmap;
 
 use self::consy::Cell;
 use barre::Barre;
-use barre::ParseTree;
+use barre::parsesets::Tree;
 use criterion::Criterion;
-use hashbrown::HashSet;
+use indexmap::IndexSet;
 
-use barre::language::{tok};
+use barre::language::tok;
 
 fn extract_match_inner(s: &mut String, pt: &Cell<char>) {
     match pt {
@@ -26,7 +26,7 @@ fn extract_match_inner(s: &mut String, pt: &Cell<char>) {
     }
 }
 
-fn extract_match(res: &Option<HashSet<ParseTree>>) -> Option<String> {
+fn extract_match(res: &Option<IndexSet<Tree<char>>>) -> Option<String> {
     let mut ret = String::new();
     if let Some(r) = res {
         let mut it = r.iter();

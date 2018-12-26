@@ -1,43 +1,16 @@
-use parsesets::{ParseSet, RedFn};
+use parsesets::{Forest, RedFn};
+use siaa::Siaa;
 use std::fmt;
 use std::rc::Rc;
 
-/// Symbol in an alphabet.
-///
-/// This marker trait for all the qualities that a token must support in
-/// order to be useable in a regular expression.  All of these traits
-/// are supported by "char" and "u8", unsurprisingly.
-/*
-pub trait Siaa:
-    std::clone::Clone
-    + std::cmp::PartialEq
-    + std::cmp::Eq
-    + std::fmt::Debug
-    + std::fmt::Display
-    + std::default::Default
-    + std::hash::Hash
-{
-}
-
-impl<T> Siaa for T where
-    T: std::clone::Clone
-        + std::cmp::PartialEq
-        + std::cmp::Eq
-        + std::fmt::Debug
-        + std::fmt::Display
-        + std::default::Default
-        + std::hash::Hash
-{}
-*/
-
 #[derive(Clone)]
-pub enum Parser {
+pub enum Parser<T: Siaa, U: Siaa> {
     Emp,
-    Eps(Rc<ParseSet>),
-    Tok(char),
+    Eps(Rc<Forest<U>>),
+    Tok(T),
     Alt,
     Cat,
-    Red(Rc<RedFn>),
+    Red(Rc<RedFn<T, U>>),
     Ukn,
     //Rep, // Repetition
     //Its  // Intersection - This *and* that
@@ -54,7 +27,7 @@ pub enum Parser {
     //        meet Sulzmann's POSIX requirement?
 }
 
-impl fmt::Debug for Parser {
+impl<T: Siaa, U: Siaa> fmt::Debug for Parser<T, U> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Parser::Emp => write!(f, "Emp"),

@@ -1,9 +1,9 @@
-use barre::Grammar;
 use barre::Barre;
+use barre::Grammar;
 
 #[test]
 fn beer() {
-    let mut grammar = Grammar::new();
+    let mut grammar = Grammar::<char, char>::new();
     let b = grammar.make_tok(&'b');
     let ee = {
         let e1 = grammar.make_tok(&'e');
@@ -16,12 +16,7 @@ fn beer() {
     let beer = grammar.make_cat(b, eer);
     grammar.start = beer;
     let mut barre = Barre::from_grammar(grammar);
-    let p = barre
-        .parse(&mut "beeeer".chars())
-        .unwrap()
-        .into_iter()
-        .next()
-        .unwrap();
+    let p = barre.parse(&mut "beeeer".chars()).unwrap().into_iter().next().unwrap();
     println!("{:?}", p);
     assert!(true);
 }

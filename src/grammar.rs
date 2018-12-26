@@ -1,12 +1,17 @@
 use arena::{Arena, Node, NodeId};
-use consy::Cell;
-use hashbrown::{HashMap, HashSet};
+
+use consy::{Cell, cons};
+use hashbrown::HashMap;
+
+use indexmap::indexset;
 use language::Language;
+use siaa::{Riaa, Siaa};
 use std::iter::FromIterator;
 use std::ops::{Index, IndexMut};
-use parsesets::{ParseSet, ParseTreeExtractor, RedFn};
 use std::rc::Rc;
 use types::Parser;
+
+use parsesets::{Forest, ParseTreeExtractor, RedFn};
 
 // Deliberate mechanism to build things in the correct order, so that
 // the compiler's habit of building temporaries is circumvented and
@@ -52,10 +57,13 @@ macro_rules! set_node {
 /// null.
 
 #[derive(Clone)]
-pub struct Grammar {
+pub struct Grammar<T: Siaa + 'static, U: Riaa<T> + 'static>
+where
+    U: std::convert::From<T>,
+{
     // The memory arena in which our graph is stored.  All "nodes" are
     // merely indexes into the arena to other nodes.
-    pub arena: Arena<Parser>,
+    pub arena: Arena<Parser<T, U>>,
 
     // While it's possible to just have a lot of empties, they're
     // utterly indistinguishable from one another, so having just one
@@ -65,18 +73,25 @@ pub struct Grammar {
     // Every language has a starting point, the head of the tree
     // of processing instructions.
     pub start: NodeId,
+
+    // Pre-reduction cast operator
+    pub cast: Rc<Fn(T) -> U>,
 }
 
-impl Grammar {
-    pub fn raw() -> Grammar {
+impl<T: Siaa, U: Riaa<T>> Grammar<T, U>
+where
+    U: std::convert::From<T>,
+{
+    pub fn raw() -> Grammar<T, U> {
         Grammar {
             arena: Arena::new(),
             empty: 0,
             start: 0,
+            cast: Rc::new(|x| T::into(x)),
         }
     }
 
-    pub fn new() -> Grammar {
+    pub fn new() -> Grammar<T, U> {
         let mut grammar = Grammar::raw();
         let _ = grammar.make_emp();
         grammar.empty = grammar.make_emp();
@@ -84,12 +99,15 @@ impl Grammar {
         grammar
     }
 
-    pub fn from_language(lang: &Language) -> Grammar {
+    pub fn from_language(lang: &Language<T>) -> Grammar<T, U> {
         let mut grammar = Grammar::new();
 
-        fn language_handler(lang: &Language, g: &mut Grammar) -> NodeId {
+        fn language_handler<T: Siaa, U: Riaa<T>>(lang: &Language<T>, g: &mut Grammar<T, U>) -> NodeId
+        where
+            U: std::convert::From<T>,
+        {
             match lang {
-                Language::Epsilon => g.make_eps_from_token(&char::default()),
+                Language::Epsilon => g.make_eps_from_token(&T::default()),
 
                 Language::Token(ref t) => g.make_tok(&t.0.clone()),
 
@@ -122,15 +140,16 @@ impl Grammar {
         make_node!(self.arena, Parser::Emp)
     }
 
-    pub fn make_eps(&mut self, token: &Rc<ParseSet>) -> NodeId {
+    pub fn make_eps(&mut self, token: &Rc<Forest<U>>) -> NodeId {
         make_node!(self.arena, Parser::Eps(token.clone()))
     }
 
-    pub fn make_eps_from_token(&mut self, token: &char) -> NodeId {
-        self.make_eps(&Rc::new(parseset!(Cell::Lit(token.clone()))))
+    pub fn make_eps_from_token(&mut self, token: &T) -> NodeId {
+        let val = (*self.cast)(token.clone());
+        self.make_eps(&Rc::new(Forest(indexset!(Cell::Lit(val)))))
     }
 
-    pub fn make_tok(&mut self, token: &char) -> NodeId {
+    pub fn make_tok(&mut self, token: &T) -> NodeId {
         make_node!(self.arena, Parser::Tok(token.clone()))
     }
 
@@ -142,7 +161,7 @@ impl Grammar {
         make_node!(self.arena, Parser::Cat, left, right)
     }
 
-    pub fn make_red(&mut self, left: NodeId, func: Rc<RedFn>) -> NodeId {
+    pub fn make_red(&mut self, left: NodeId, func: Rc<RedFn<T, U>>) -> NodeId {
         make_node!(self.arena, Parser::Red(func), left)
     }
 
@@ -155,7 +174,7 @@ impl Grammar {
         // L* = ε() ∪ (L ◦ L*)
         let lstar = self.make_ukn();
         let right = self.make_cat(child_node, lstar);
-        let epsto = self.make_eps_from_token(&char::default());
+        let epsto = self.make_eps_from_token(&T::default());
         self.set_alt(lstar, epsto, right);
         lstar
     }
@@ -169,15 +188,16 @@ impl Grammar {
         set_node!(self.arena[target], Parser::Emp);
     }
 
-    pub fn set_eps(&mut self, target: NodeId, token: &Rc<ParseSet>) {
+    pub fn set_eps(&mut self, target: NodeId, token: &Rc<Forest<U>>) {
         set_node!(self.arena[target], Parser::Eps(token.clone()));
     }
 
-    pub fn set_eps_from_token(&mut self, target: NodeId, token: char) {
-        self.set_eps(target, &Rc::new(parseset!(Cell::Lit(token.clone()))));
+    pub fn set_eps_from_token(&mut self, target: NodeId, token: T) {
+        let val = (*self.cast)(token.clone());
+        self.set_eps(target, &Rc::new(Forest(indexset!(Cell::Lit(val)))));
     }
 
-    pub fn set_tok(&mut self, target: NodeId, token: &char) {
+    pub fn set_tok(&mut self, target: NodeId, token: &T) {
         set_node!(self.arena[target], Parser::Tok(token.clone()));
     }
 
@@ -189,7 +209,7 @@ impl Grammar {
         set_node!(self.arena[target], Parser::Cat, left, right);
     }
 
-    pub fn set_red(&mut self, target: NodeId, left: NodeId, func: Rc<RedFn>) {
+    pub fn set_red(&mut self, target: NodeId, left: NodeId, func: Rc<RedFn<T, U>>) {
         set_node!(self.arena[target], Parser::Red(func), left);
     }
 
@@ -198,16 +218,22 @@ impl Grammar {
     }
 }
 
-impl Index<NodeId> for Grammar {
-    type Output = Node<Parser>;
-    fn index<'a>(&'a self, index: NodeId) -> &'a Node<Parser> {
+impl<T: Siaa, U: Riaa<T>> Index<NodeId> for Grammar<T, U>
+where
+    U: std::convert::From<T>,
+{
+    type Output = Node<Parser<T, U>>;
+    fn index<'a>(&'a self, index: NodeId) -> &'a Node<Parser<T, U>> {
         debug_assert!(index < self.arena.len());
         &self.arena[index]
     }
 }
 
-impl IndexMut<NodeId> for Grammar {
-    fn index_mut<'a>(&'a mut self, index: NodeId) -> &'a mut Node<Parser> {
+impl<T: Siaa, U: Riaa<T>> IndexMut<NodeId> for Grammar<T, U>
+where
+    U: std::convert::From<T>,
+{
+    fn index_mut<'a>(&'a mut self, index: NodeId) -> &'a mut Node<Parser<T, U>> {
         debug_assert!(index < self.arena.len());
         &mut self.arena[index]
     }
@@ -221,17 +247,20 @@ pub enum Nullable {
     Unvisited,
 }
 
-pub struct NodePair<'a>(NodeId, &'a mut Node<Parser>);
+pub struct NodePair<'a, T: Siaa, U: Riaa<T>>(NodeId, &'a mut Node<Parser<T, U>>);
 
-pub struct Deriver {
+pub struct Deriver<T: Siaa + 'static, U: Riaa<T> + 'static>
+where
+    U: std::convert::From<T>,
+{
     // The memory arena in which our graph is stored.  All "nodes" are
     // merely indexes into the arena to other nodes.
-    pub grammar: Grammar,
+    pub grammar: Grammar<T, U>,
 
     // A memoized version of the (node, token) -> node tree, so that
     // in the event of recursion, we don't really recurse, we just
     // use this thing.
-    pub memo: HashMap<(NodeId, char), NodeId>,
+    pub memo: HashMap<(NodeId, T), NodeId>,
 
     // A parallel object storing whether or not the node is nullable or
     // has been proven nullable.
@@ -245,13 +274,13 @@ pub struct Deriver {
     pub listeners: HashMap<NodeId, Vec<NodeId>>,
 }
 
-type ExtractionType = HashMap<NodeId, ParseSet>;
+type ExtractionType<U> = HashMap<NodeId, Forest<U>>;
 
 // Default rules for various parsers.  Used to intialize the
 // nullability tracking vector.  TODO: Roll this over to the parser
 // types module.
 
-pub fn parser_default_nullable(parser: &Parser) -> Nullable {
+pub fn parser_default_nullable<T: Siaa, U: Riaa<T>>(parser: &Parser<T, U>) -> Nullable {
     match parser {
         Parser::Emp => Nullable::Reject,
         Parser::Eps(_) => Nullable::Accept,
@@ -263,12 +292,16 @@ pub fn parser_default_nullable(parser: &Parser) -> Nullable {
     }
 }
 
-pub fn init_nulls(arena: &Arena<Parser>) -> HashMap<NodeId, Nullable> {
+pub fn init_nulls<T: Siaa, U: Riaa<T>>(arena: &Arena<Parser<T, U>>) -> HashMap<NodeId, Nullable>
+where
+    U: std::convert::From<T>,
+{
     HashMap::from_iter(
         arena
             .iter()
             .enumerate()
-            .map(|(i, t)| (i, parser_default_nullable(&t.data))))
+            .map(|(i, t)| (i, parser_default_nullable(&t.data))),
+    )
 }
 
 macro_rules! make_with_null {
@@ -279,8 +312,74 @@ macro_rules! make_with_null {
     }};
 }
 
-impl Deriver {
-    pub fn new(grammar: &Grammar) -> Deriver {
+// Functions used by the optimizer to, um, optimize.
+//
+pub fn union<T, U: Riaa<T>>(this: &Forest<U>, other: &Forest<U>) -> Forest<U>
+where
+    U: std::convert::From<T>,
+{
+    Forest(other.0.union(&this.0).cloned().collect())
+}
+
+pub fn permute<T, U: Riaa<T>>(this: &Forest<U>, other: &Forest<U>) -> Forest<U>
+where
+    U: std::convert::From<T>,
+{
+    let mut ret = Forest::new();
+    for t1 in &this.0 {
+        for t2 in &other.0 {
+            ret.0.insert(cons!(t1.clone(), t2.clone()));
+        }
+    }
+    ret
+}
+
+// Optimization: (p1 ◦ p2) ◦ p3 ⇒ (p1 ◦ (p2 ◦ p3)) → λu. {((t1, t2), t3) | (t1,(t2, t3)) ∈ u}
+// See grammar::Grammer::set_optimized_cat_left for details.
+//
+pub fn rebalance_after_seq<T, U: Riaa<T>>(this: &Forest<U>) -> Forest<U>
+where
+    U: std::convert::From<T>,
+{
+    let mut ret = Forest::new();
+    for t1 in &this.0 {
+        ret.insert(if t1.pairp() && t1.cdr().unwrap_or(&Cell::Nil).pairp() {
+            cons!(
+                cons!(t1.car().unwrap().clone(), t1.cadr().unwrap().clone()),
+                t1.cddr().unwrap().clone()
+            )
+        } else {
+            // Because this is a reconstruction after an optimization,
+            // the above structure must be correct.  If it's not,
+            // we've got bigger problems.
+            unreachable!()
+        })
+    }
+    ret
+}
+
+pub fn run_after_floated_reduction<T: Siaa, U: Riaa<T>>(
+    grammar: &mut ParseTreeExtractor<T, U>,
+    this: &Forest<U>,
+    func: &Rc<RedFn<T, U>>,
+) -> Forest<U>
+where
+    U: std::convert::From<T>,
+{
+    let mut ret = Forest::new();
+    for t1 in &this.0 {
+        for t2 in func(grammar, &Forest(indexset!(t1.car().unwrap().clone()))).0 {
+            ret.insert(cons!(t2, t1.cdr().unwrap().clone()))
+        }
+    }
+    ret
+}
+
+impl<T: Siaa, U: Riaa<T>> Deriver<T, U>
+where
+    U: std::convert::From<T>,
+{
+    pub fn new(grammar: &Grammar<T, U>) -> Deriver<T, U> {
         let nulls = init_nulls(&grammar.arena);
         let mut deriver = Deriver {
             grammar: grammar.clone(),
@@ -296,15 +395,16 @@ impl Deriver {
         make_with_null!(self, self.grammar.make_emp())
     }
 
-    pub fn make_eps(&mut self, token: &Rc<ParseSet>) -> NodeId {
+    pub fn make_eps(&mut self, token: &Rc<Forest<U>>) -> NodeId {
         make_with_null!(self, self.grammar.make_eps(token))
     }
 
-    pub fn make_eps_from_token(&mut self, token: &char) -> NodeId {
-        self.make_eps(&Rc::new(parseset!(Cell::Lit(token.clone()))))
+    pub fn make_eps_from_token(&mut self, token: &T) -> NodeId {
+        let val = (*self.grammar.cast)(token.clone());
+        self.make_eps(&Rc::new(Forest(indexset!(Cell::Lit(val)))))
     }
 
-    pub fn make_tok(&mut self, token: &char) -> NodeId {
+    pub fn make_tok(&mut self, token: &T) -> NodeId {
         make_with_null!(self, self.grammar.make_tok(token))
     }
 
@@ -316,7 +416,7 @@ impl Deriver {
         make_with_null!(self, self.grammar.make_cat(left, right))
     }
 
-    pub fn make_red(&mut self, left: NodeId, func: Rc<RedFn>) -> NodeId {
+    pub fn make_red(&mut self, left: NodeId, func: Rc<RedFn<T, U>>) -> NodeId {
         make_with_null!(self, self.grammar.make_red(left, func))
     }
 
@@ -355,7 +455,7 @@ impl Deriver {
                             self.grammar.set_red(
                                 nodeid,
                                 node.right,
-                                Rc::new(move |_grammar, ts| (*eps_rc).permute(&ts)),
+                                Rc::new(move |_grammar, ts| permute(&*eps_rc, &ts)),
                             );
                             true
                         }
@@ -366,7 +466,7 @@ impl Deriver {
                             self.grammar.set_red(
                                 nodeid,
                                 child_node,
-                                Rc::new(move |grammar, ts| ts.run_after_floated_reduction(grammar, &gunc)),
+                                Rc::new(move |grammar, ts| run_after_floated_reduction(grammar, ts, &gunc)),
                             );
                             true
                         }
@@ -410,13 +510,13 @@ impl Deriver {
 
             Parser::Eps(ref eps) => {
                 let closed_pt = eps.clone();
-                self.make_red(right_child_id, Rc::new(move |_grammar, ts| (*closed_pt).permute(&ts)))
+                self.make_red(right_child_id, Rc::new(move |_grammar, ts| permute(&*closed_pt, &ts)))
             }
 
             Parser::Cat => {
                 let left_right_cat = self.make_cat(left.right, right_child_id);
                 let left_cat = self.make_cat(left.left, left_right_cat);
-                self.make_red(left_cat, Rc::new(move |_grammar, ts| ts.rebalance_after_seq()))
+                self.make_red(left_cat, Rc::new(move |_grammar, ts| rebalance_after_seq(&ts)))
             }
 
             _ => self.make_cat(left_child_id, right_child_id),
@@ -426,7 +526,7 @@ impl Deriver {
     // Takes a child node and a function, and returns a new node built
     // according to the optimization function.
     //
-    fn make_optimized_red(&mut self, child_id: NodeId, func: Rc<RedFn>) -> NodeId {
+    fn make_optimized_red(&mut self, child_id: NodeId, func: Rc<RedFn<T, U>>) -> NodeId {
         let child = self.grammar[child_id].clone();
 
         match child.data {
@@ -474,8 +574,8 @@ impl Deriver {
                     // Optimization:  ε(s1) U ε(s2) -> (s1 U s2)
                     // Note that this optimization is the union of two parse forests.
                     Parser::Eps(ref reps) => {
-                        let ret = leps.union(&reps);
-                        self.grammar.set_eps(target, &Rc::new(ret));
+                        let new_eps = union(&leps, &reps);
+                        self.grammar.set_eps(target, &Rc::new(new_eps));
                         true
                     }
 
@@ -566,7 +666,7 @@ impl Deriver {
                 self.grammar.set_red(
                     target,
                     right_child_id,
-                    Rc::new(move |_grammar, ts| closed_eps.permute(&ts)),
+                    Rc::new(move |_grammar, ts| permute(&closed_eps, &ts)),
                 );
                 true
             }
@@ -601,9 +701,7 @@ impl Deriver {
                 self.grammar.set_red(
                     target,
                     left_optimized_cat,
-                    Rc::new(move |_grammar, ts| {
-                        ts.rebalance_after_seq()
-                    }),
+                    Rc::new(move |_grammar, ts| rebalance_after_seq(&ts)),
                 );
                 true
             }
@@ -624,7 +722,7 @@ impl Deriver {
                 self.grammar.set_red(
                     target,
                     child,
-                    Rc::new(move |grammar, ts| ts.run_after_floated_reduction(grammar, &gunc)),
+                    Rc::new(move |grammar, ts| run_after_floated_reduction(grammar, &ts, &gunc)),
                 );
                 true
             }
@@ -691,7 +789,7 @@ impl Deriver {
     // Given a node and token, returns a node that represents the
     // derivative of the node passed in.
     //
-    fn derive(&mut self, nodeid: NodeId, token: &char) -> NodeId {
+    fn derive(&mut self, nodeid: NodeId, token: &T) -> NodeId {
         {
             if let Some(cached_node) = self.memo.get(&(nodeid, token.clone())) {
                 return *cached_node;
@@ -743,7 +841,7 @@ impl Deriver {
                         r,
                         Rc::new(move |grammar, ts2| {
                             let ts1 = grammar.parse_tree(sac_l);
-                            ts1.permute(&ts2)
+                            permute(&ts1, &ts2)
                         }),
                     );
                     let cat = self.make_optimized_cat(l, node.right);
@@ -783,7 +881,12 @@ impl Deriver {
         self.cached_nullable(&mut node_pair, None, &Nullable::Unvisited)
     }
 
-    fn cached_nullable(&mut self, nodepair: &mut NodePair, parent: Option<NodeId>, status: &Nullable) -> bool {
+    fn cached_nullable(
+        &mut self,
+        nodepair: &mut NodePair<T, U>,
+        parent: Option<NodeId>,
+        status: &Nullable,
+    ) -> bool {
         let nullable = &self.nulls[&nodepair.0].clone();
         match nullable {
             Nullable::Accept => true,
@@ -801,8 +904,8 @@ impl Deriver {
             Nullable::Unvisited => {
                 self.nulls.insert(nodepair.0, Nullable::InProgress);
                 if self.compute_notify_nullable(nodepair, status) {
-                    return true
-                } 
+                    return true;
+                }
 
                 if let Some(parent) = parent {
                     let listeners = &mut self.listeners.entry(parent).or_insert(vec![]);
@@ -813,8 +916,8 @@ impl Deriver {
         }
     }
 
-    fn compute_notify_nullable(&mut self, nodepair: &mut NodePair, status: &Nullable) -> bool {
-        if ! self.base_nullable(nodepair, status) {
+    fn compute_notify_nullable(&mut self, nodepair: &mut NodePair<T, U>, status: &Nullable) -> bool {
+        if !self.base_nullable(nodepair, status) {
             return false;
         }
 
@@ -830,7 +933,7 @@ impl Deriver {
         true
     }
 
-    fn base_nullable(&mut self, nodepair: &mut NodePair, status: &Nullable) -> bool {
+    fn base_nullable(&mut self, nodepair: &mut NodePair<T, U>, status: &Nullable) -> bool {
         let nodeid = nodepair.0;
         match &nodepair.1.data {
             Parser::Emp => false,
@@ -867,32 +970,32 @@ impl Deriver {
     // |_| \__,_|_| /__/\___|   |_||_| \___\___|
     //
 
-    pub fn parse_tree_inner(&mut self, memo: &mut ExtractionType, nodeid: NodeId) -> ParseSet {
+    pub fn parse_tree_inner(&mut self, memo: &mut ExtractionType<U>, nodeid: NodeId) -> Forest<U> {
         if let Some(cached_result) = memo.get(&nodeid) {
             return cached_result.clone();
         };
 
         if !self.nullable(nodeid) {
-            return ParseSet::new();
+            return Forest::new();
         };
 
         let node = &self.grammar[nodeid].clone();
 
         match &node.data {
-            Parser::Emp => ParseSet::new(),
+            Parser::Emp => Forest::new(),
 
-            Parser::Tok(_) => ParseSet::new(),
+            Parser::Tok(_) => Forest::new(),
 
             Parser::Eps(ref eps) => (**eps).clone(),
 
             Parser::Alt => {
                 let p1 = self.parse_tree_inner(memo, node.left);
-                p1.union(&self.parse_tree_inner(memo, node.right))
+                union(&p1, &self.parse_tree_inner(memo, node.right))
             }
 
             Parser::Cat => {
                 let p1 = self.parse_tree_inner(memo, node.left);
-                p1.permute(&self.parse_tree_inner(memo, node.right))
+                permute(&p1, &self.parse_tree_inner(memo, node.right))
             }
 
             Parser::Red(ref red) => {
@@ -912,9 +1015,9 @@ impl Deriver {
     // |_| \__,_|_| /__/\___| (_)
     //
     //
-    pub fn parse<I>(&mut self, items: &mut I) -> Option<ParseSet>
+    pub fn parse<I>(&mut self, items: &mut I) -> Option<Forest<U>>
     where
-        I: Iterator<Item = char>,
+        I: Iterator<Item = T>,
     {
         let mut nodeid = self.grammar.start;
         let mut items = items.peekable();
@@ -953,9 +1056,11 @@ impl Deriver {
     }
 }
 
-impl ParseTreeExtractor for Deriver {
-    fn parse_tree(&mut self, start: NodeId) -> ParseSet {
-        let mut memo: ExtractionType = HashMap::new();
+impl<T: Siaa, U: Riaa<T>> ParseTreeExtractor<T, U> for Deriver<T, U>
+    where U: std::convert::From<T>
+{
+    fn parse_tree(&mut self, start: NodeId) -> Forest<U> {
+        let mut memo: ExtractionType<U> = HashMap::new();
         self.parse_tree_inner(&mut memo, start)
     }
 }

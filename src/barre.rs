@@ -1,27 +1,36 @@
-use grammar::{Grammar, Deriver};
-use hashbrown::HashSet;
+use grammar::{Deriver, Grammar};
+use indexmap::IndexSet;
 use language::Language;
-use parsesets::ParseTree;
+use parsesets::Tree;
+use siaa::{Riaa, Siaa};
 
-pub struct Barre(Grammar);
+/// This is the primary API for interacting with the Barre parser.  The
+/// types are the input type, and the output type.  The input type
+/// must be cloneable, iteratable and peekable.  The output type must
+/// be cloneable and hashable.  The user typically must provide a
+/// function for converting from one to the other.  In the most basic
+/// form, that's just an ID function.
 
-impl Barre {
-    pub fn from_language(lang: &Language) -> Barre {
+pub struct Barre<T: Siaa + 'static, U: Riaa<T> + std::convert::From<T> + 'static>(Grammar<T, U>);
+
+impl<T: Siaa, U: Riaa<T>> Barre<T, U>
+    where U: std::convert::From<T>
+{
+    pub fn from_language(lang: &Language<T>) -> Barre<T, U> {
         Barre(Grammar::from_language(lang))
     }
 
-    pub fn new() -> Barre {
+    pub fn new() -> Barre<T, U> {
         Barre(Grammar::new())
     }
 
-    pub fn from_grammar(gram: Grammar) -> Barre {
+    pub fn from_grammar(gram: Grammar<T, U>) -> Barre<T, U> {
         Barre(gram)
     }
-        
 
-    pub fn parse<I>(&mut self, items: &mut I) -> Option<HashSet<ParseTree>>
+    pub fn parse<I>(&mut self, items: &mut I) -> Option<IndexSet<Tree<U>>>
     where
-        I: Iterator<Item = char>,
+        I: Iterator<Item = T>,
     {
         let mut deriver = Deriver::new(&self.0);
         match deriver.parse(items) {
@@ -31,7 +40,9 @@ impl Barre {
     }
 }
 
-impl Default for Barre {
+impl<T: Siaa, U: Riaa<T>> Default for Barre<T, U>
+    where U: std::convert::From<T>
+{
     fn default() -> Self {
         Self::new()
     }

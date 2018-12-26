@@ -1,0 +1,80 @@
+<h1 id="barge-and-barre">BARGE and BARRE</h1>
+<p>Welcome to Barge (Brzozowski's Algorimth for Regular Grammars Engine) and Barre (Barge Applied to Rust Regular Expressions). In this series of documents we describe what regular grammars and regular expressions are, where they came from, and how Barge and Barre handle them different from the traditional mechanisms found in most programming languages.</p>
+<p>As most people know them, regular expressions are used to recognize strings in a body of text. A regular expression is a kind of miniature programming language: you program it using a pattern in a <em>regex dialect</em> (more on that <a href="TK">later</a>), and then give it a body of text, and you get back a data structure indicating the success state of the match and how much was matched.</p>
+<p>But regular expressions are much more than that, and as we'll see in this book, they lead to some very interesting places in the development of programming languages. More importantly, some modern discoveries about the implementation of regular expression leads to the unification of regular expressions and context-free grammars— and the replacement of many of the ad-hoc formalities of lexing-vs-parsing with a unified library of tools for turning text into data structures.</p>
+<p>Let's lay some groundwork.</p>
+<h2 id="regular">&quot;Regular&quot;</h2>
+<p>In 1958, <a href="https://en.wikipedia.org/wiki/Regular_expression">Stephen Kleene</a> took <a href="https://en.wikipedia.org/wiki/Chomsky_hierarchy">Noam Chomsky</a>'s notion of linguistic hierarchies and applied them to computer science. He started with the following ideas.</p>
+<ul>
+<li><em>letters</em> are the atoms of all linguistics. In this context, a letter is any symbol, not just the usual ones. Every letter, character, space, tab, and emoji in the Unicode specification is a &quot;letter&quot; in the formal sense.</li>
+<li>An <em>alphabet</em> is a set (in the formal mathematical sense) of of letters. The ASCII set is an alphabet. The Unicode specification is a different set. The symbols that make up Morse code are yet a third, distinct set.</li>
+<li>A <em>word</em> is a finite sequence of letters from a given alphabet, but don't make the mistake of thinking that &quot;word&quot; always corresponds to spoken language's idea of what &quot;word&quot; means. In the database programming language SQL, for example, &quot;GROUP BY&quot; is a single word: a finite sequence of letters that has a single semantic meaning.</li>
+<li>A <em>string</em> is a sequence of words strung together in a specific order.</li>
+<li>A <em>language</em> is a set of strings composed out of a given alphabet.</li>
+</ul>
+<p>That last one is the &quot;formal&quot; definition, but we human beings often apply a qualifier to it: it's the set of strings that have an existing semantic relationship, that is, it's the set of strings that <em>make sense to us</em> in some way. The tools that Kleene first described have come to be known as <em>parsers</em>: they take strings of data in and convert them into something meaningful: yes/no (Yes, I recognize that string; No, I don't), Yes/and (Yes, I recognize that string, and here are the parts you wanted extracted), or Yes/plus (Yes, I recognize all the text in that document and here is the spreadsheet (or video, or music, or executable) it represents).</p>
+<p>Kleene then went on to define three &quot;root&quot; operators for languages, and three combinations of those languages. Think of these as functions:</p>
+<blockquote>
+<p>L ::= ∅ | ε | c | L1 ◦ L2 | L1 ∪ L2 | L1<sup>*</sup></p>
+</blockquote>
+<ul>
+<li><dl>
+<dt><code>∅</code></dt>
+<dd>NULL: Always returns False
+</dd>
+</dl></li>
+<li><dl>
+<dt><code>ε</code></dt>
+<dd>EMPTY: Returns True if the string handed to it is empty.
+</dd>
+</dl></li>
+<li><dl>
+<dt><code>c</code></dt>
+<dd>TOKEN: Returns True if the <em>letter</em> passed to it matches the letter with which it was <em>constructed</em>.
+</dd>
+</dl></li>
+<li><dl>
+<dt><code>L1 ◦ L2</code></dt>
+<dd>SEQUENCE: Constructed out of two languages, this returns True if first language takes the string and returns true <em>followed by</em> the second language taking <em>what remains</em> of the string and returning true.
+</dd>
+</dl></li>
+<li><dl>
+<dt><code>L1 ∪ L2</code></dt>
+<dd>ALTERNATIVES: Constructed out of two languages that both take the string at the same time, this returns True if <em>either</em> language returns true.
+</dd>
+</dl></li>
+<li><dl>
+<dt><code>L1*</code></dt>
+<dd>REPETITION: Constructed out of another language, this returns True if the string passed it contains zero or more instances of that language.
+</dd>
+</dl></li>
+</ul>
+<p>There are some &quot;extended&quot; versions of this language, which you may recognize:</p>
+<ul>
+<li><dl>
+<dt><code>L1 ∩ L2</code></dt>
+<dd>INTERSECTION: Constructed out of two languages that both take the string at the same time, returns True if both languages return true.
+</dd>
+</dl></li>
+<li><dl>
+<dt><code>¬L1</code></dt>
+<dd>NEGATION: Constructed out of another language, returns True if L1 returns False, and False if L1 returns True.
+</dd>
+</dl></li>
+<li><dl>
+<dt><code>L1+</code></dt>
+<dd>AT LEAST ONE: Constructed out of another language, this returns True if the string passed to it contains one or more instances of that language.
+</dd>
+</dl></li>
+</ul>
+<p>The <strong>+</strong> operator can be built out Kleene's base operators: <code>L+ ::= L ◦ L*</code>. Likewise, regular expression libraries that support both intersection and negation can express some extremely difficult languages that can't be expressed easily.</p>
+<p>One thing Kleene's library can't handle is <em>nested</em> expressions. Nested parentheticals are beyond Kleene's algorithm to handle them because it has no means of keeping track of how often the nesting has happened. It only recognizes letters as they're coming in and keeps no record of what it's seen before.</p>
+<h2 id="expression">&quot;Expression&quot;</h2>
+<p>One loose breakdown in programming languages is between those that are &quot;statement oriented&quot; and those that are &quot;expression oriented.&quot; In the C programming language, for example, an <em>if statement</em> looks like this:</p>
+<pre><code>if (some_value) { y = 10; } else { y = 11; }</code></pre>
+<p>And an <em>if expression</em> looks like this:</p>
+<pre><code>y = (some_value) ? 10 : 11;</code></pre>
+<p>In the first, each arm of the statement can do something entirely different. In the second, the only thing the <em>expression</em> can do is return a value, and because the destination is the same in both cases those values must be of the same <em>type</em>.</p>
+<p>Regular expressions are <em>expressions</em> because, once defined, each takes a value and returns a value: it takes a string and returns the results of recognizing (or failing to recognize) parts of that string. They're &quot;pure expressions&quot; in that they have no side effects, and can't do anything other than the recognition and conversion they're programmed to perform.</p>
+<h2 id="next-steps">Next Steps</h2>
+<p>We've reached 1960, the year when computer scientists and engineers began grappling with turning source code into running programs in a formal way, rather than the ad-hoc, hand-typed assembly language they'd been using through the previous decade. In the next chapter, we'll discuss a little more about the history of regular expressions, and how Kleene's mathematics were turned into the running programs we use today.</p>

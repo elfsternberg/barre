@@ -1,9 +1,13 @@
 extern crate barre;
 extern crate consy;
 extern crate hashbrown;
+extern crate indexmap;
+
 use self::consy::Cell;
 use barre::Barre;
-use hashbrown::HashSet;
+
+use self::indexmap::IndexSet;
+
 // use language::{cat, alt, rep, tok};
 
 use barre::language::tok;
@@ -19,7 +23,7 @@ fn extract_match_inner(s: &mut String, pt: &Cell<char>) {
     }
 }
 
-fn extract_match(res: &Option<HashSet<Cell<char>>>) -> Option<String> {
+fn extract_match(res: &Option<IndexSet<Cell<char>>>) -> Option<String> {
     let mut ret = String::new();
     println!("{:?}", res);
     if let Some(r) = res {

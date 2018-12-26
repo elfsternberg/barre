@@ -3,15 +3,16 @@
 extern crate arena;
 extern crate consy;
 extern crate hashbrown;
+extern crate indexmap;
 
+pub mod siaa;
 pub mod types;
 
 #[macro_use]
 pub mod language;
 
 #[macro_use]
-mod parsesets;
-pub use parsesets::ParseTree;
+pub mod parsesets;
 
 #[macro_use]
 pub mod grammar;
@@ -20,4 +21,3 @@ pub mod barre;
 pub use grammar::Grammar;
 
 pub use barre::Barre;
-

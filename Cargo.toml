@@ -13,6 +13,7 @@ render_trees = []
 arena = { path = "arena" }
 consy = { path = "consy" }
 hashbrown = "0.1.7"
+indexmap = "1.0.2"
 
 [target.'cfg(feature = "render_trees")'.dependencies]
 dot = "0.1.4"
