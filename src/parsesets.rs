@@ -25,7 +25,10 @@ pub trait ParseTreeExtractor<T: Siaa, U: Siaa> {
     fn parse_tree(&mut self, start: NodeId) -> Forest<U>;
 }
 
-pub type RedFn<T, U> = Fn(&mut ParseTreeExtractor<T, U>, &Forest<U>) -> Forest<U>;
+pub type IRedFn<T, U> = Fn(&mut ParseTreeExtractor<T, U>, &Forest<U>) -> Forest<U>;
+
+pub type RedFn<U> = Fn(&Forest<U>) -> Forest<U>;
+
 
 impl<U: Siaa> Forest<U> {
     pub fn new() -> Forest<U> {

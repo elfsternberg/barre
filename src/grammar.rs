@@ -11,7 +11,8 @@ use std::ops::{Index, IndexMut};
 use std::rc::Rc;
 use types::Parser;
 
-use parsesets::{Forest, ParseTreeExtractor, RedFn};
+use parsesets::{Forest, ParseTreeExtractor, RedFn, IRedFn};
+
 
 // Deliberate mechanism to build things in the correct order, so that
 // the compiler's habit of building temporaries is circumvented and
@@ -35,6 +36,12 @@ macro_rules! make_node {
     }};
 }
 
+// The Derp-3 parser relies on a two-step of creating a node with an
+// "unknown" type to short out recursion, followed derivation of child
+// nodes, and then setting the node to the type requested with the
+// derivative nodes.  This code ensure that happens in the correct
+// order.
+
 macro_rules! set_node {
     ( $target:expr, $par:expr ) => {{
         $target.data = $par;
@@ -51,10 +58,9 @@ macro_rules! set_node {
     }};
 }
 
-/// A grammar represent the list of rules that describe
-/// a regular expression: they're the individual atoms
-/// of concatenate, alternate, repeat, token, empty and
-/// null.
+/// A grammar represent the list of rules that describe a regular
+/// expression: they're the individual atoms of concatenate,
+/// alternate, repeat, token, empty and null.
 
 #[derive(Clone)]
 pub struct Grammar<T: Siaa + 'static, U: Riaa<T> + 'static>
@@ -161,10 +167,15 @@ where
         make_node!(self.arena, Parser::Cat, left, right)
     }
 
-    pub fn make_red(&mut self, left: NodeId, func: Rc<RedFn<T, U>>) -> NodeId {
+    pub fn make_ired(&mut self, left: NodeId, func: Rc<IRedFn<T, U>>) -> NodeId {
         make_node!(self.arena, Parser::Red(func), left)
     }
 
+    pub fn make_red(&mut self, left: NodeId, func: Rc<RedFn<U>>) -> NodeId {
+        let closed_fn = func.clone();
+        make_node!(self.arena, Parser::Red(Rc::new(move |_, ts| closed_fn(ts))), left)
+    }
+    
     pub fn make_ukn(&mut self) -> NodeId {
         make_node!(self.arena, Parser::Ukn)
     }
@@ -209,7 +220,7 @@ where
         set_node!(self.arena[target], Parser::Cat, left, right);
     }
 
-    pub fn set_red(&mut self, target: NodeId, left: NodeId, func: Rc<RedFn<T, U>>) {
+    pub fn set_red(&mut self, target: NodeId, left: NodeId, func: Rc<IRedFn<T, U>>) {
         set_node!(self.arena[target], Parser::Red(func), left);
     }
 
@@ -217,6 +228,16 @@ where
         set_node!(self.arena[target], Parser::Ukn);
     }
 }
+
+//    _                               
+//   /_\  __ __ ___ ______ ___ _ _ ___
+//  / _ \/ _/ _/ -_|_-<_-</ _ \ '_(_-<
+// /_/ \_\__\__\___/__/__/\___/_| /__/
+//                                    
+
+// These two accessors are provided so that the Deriver can access the
+// contents of the Grammar without having to make public the Grammar
+// contents directly.
 
 impl<T: Siaa, U: Riaa<T>> Index<NodeId> for Grammar<T, U>
 where
@@ -259,10 +280,10 @@ where
 
     // A memoized version of the (node, token) -> node tree, so that
     // in the event of recursion, we don't really recurse, we just
-    // use this thing.
+    // use the memoized result.
     pub memo: HashMap<(NodeId, T), NodeId>,
 
-    // A parallel object storing whether or not the node is nullable or
+    // A memozing object storing whether or not the node is nullable or
     // has been proven nullable.
     pub nulls: HashMap<NodeId, Nullable>,
 
@@ -279,7 +300,7 @@ type ExtractionType<U> = HashMap<NodeId, Forest<U>>;
 // Default rules for various parsers.  Used to intialize the
 // nullability tracking vector.  TODO: Roll this over to the parser
 // types module.
-
+//
 pub fn parser_default_nullable<T: Siaa, U: Riaa<T>>(parser: &Parser<T, U>) -> Nullable {
     match parser {
         Parser::Emp => Nullable::Reject,
@@ -361,7 +382,7 @@ where
 pub fn run_after_floated_reduction<T: Siaa, U: Riaa<T>>(
     grammar: &mut ParseTreeExtractor<T, U>,
     this: &Forest<U>,
-    func: &Rc<RedFn<T, U>>,
+    func: &Rc<IRedFn<T, U>>,
 ) -> Forest<U>
 where
     U: std::convert::From<T>,
@@ -391,6 +412,12 @@ where
         deriver
     }
 
+    //  _  _         _                      _               _              
+    // | \| |___  __| |___   __ ___ _ _  __| |_ _ _ _  _ __| |_ ___ _ _ ___
+    // | .` / _ \/ _` / -_) / _/ _ \ ' \(_-<  _| '_| || / _|  _/ _ \ '_(_-<
+    // |_|\_\___/\__,_\___| \__\___/_||_/__/\__|_|  \_,_\__|\__\___/_| /__/
+    //                                                                     
+
     pub fn make_emp(&mut self) -> NodeId {
         make_with_null!(self, self.grammar.make_emp())
     }
@@ -416,13 +443,19 @@ where
         make_with_null!(self, self.grammar.make_cat(left, right))
     }
 
-    pub fn make_red(&mut self, left: NodeId, func: Rc<RedFn<T, U>>) -> NodeId {
-        make_with_null!(self, self.grammar.make_red(left, func))
+    pub fn make_ired(&mut self, left: NodeId, func: Rc<IRedFn<T, U>>) -> NodeId {
+        make_with_null!(self, self.grammar.make_ired(left, func))
     }
 
     pub fn make_ukn(&mut self) -> NodeId {
         make_with_null!(self, self.grammar.make_ukn())
     }
+
+    //  ___      _ _      ___       _   _       _            
+    // |_ _|_ _ (_) |_   / _ \ _ __| |_(_)_ __ (_)______ _ _ 
+    //  | || ' \| |  _| | (_) | '_ \  _| | '  \| |_ / -_) '_|
+    // |___|_||_|_|\__|  \___/| .__/\__|_|_|_|_|_/__\___|_|  
+    //                        |_|                            
 
     fn optimize_internal(&mut self, nodeid: NodeId, memo: &mut HashMap<NodeId, bool>) {
         if memo.get(&nodeid).unwrap_or(&false).clone() {
@@ -499,6 +532,12 @@ where
         self.optimize_internal(nodeid, &mut memo);
     }
 
+    //   ___       _   _       _           _    ___             _               _              
+    //  / _ \ _ __| |_(_)_ __ (_)______ __| |  / __|___ _ _  __| |_ _ _ _  _ __| |_ ___ _ _ ___
+    // | (_) | '_ \  _| | '  \| |_ / -_) _` | | (__/ _ \ ' \(_-<  _| '_| || / _|  _/ _ \ '_(_-<
+    //  \___/| .__/\__|_|_|_|_|_/__\___\__,_|  \___\___/_||_/__/\__|_|  \_,_\__|\__\___/_| /__/
+    //       |_|                                                                               
+
     // Takes two child nodes and returns a new node built according to
     // the optimization function.
     //
@@ -510,13 +549,13 @@ where
 
             Parser::Eps(ref eps) => {
                 let closed_pt = eps.clone();
-                self.make_red(right_child_id, Rc::new(move |_grammar, ts| permute(&*closed_pt, &ts)))
+                self.make_ired(right_child_id, Rc::new(move |_grammar, ts| permute(&*closed_pt, &ts)))
             }
 
             Parser::Cat => {
                 let left_right_cat = self.make_cat(left.right, right_child_id);
                 let left_cat = self.make_cat(left.left, left_right_cat);
-                self.make_red(left_cat, Rc::new(move |_grammar, ts| rebalance_after_seq(&ts)))
+                self.make_ired(left_cat, Rc::new(move |_grammar, ts| rebalance_after_seq(&ts)))
             }
 
             _ => self.make_cat(left_child_id, right_child_id),
@@ -526,7 +565,7 @@ where
     // Takes a child node and a function, and returns a new node built
     // according to the optimization function.
     //
-    fn make_optimized_red(&mut self, child_id: NodeId, func: Rc<RedFn<T, U>>) -> NodeId {
+    fn make_optimized_red(&mut self, child_id: NodeId, func: Rc<IRedFn<T, U>>) -> NodeId {
         let child = self.grammar[child_id].clone();
 
         match child.data {
@@ -540,7 +579,7 @@ where
             Parser::Red(ref gunc) => {
                 let f = func.clone();
                 let g = gunc.clone();
-                self.make_red(
+                self.make_ired(
                     child.left,
                     Rc::new(move |grammar, ts| {
                         let t = g(grammar, ts);
@@ -549,9 +588,15 @@ where
                 )
             }
 
-            _ => self.make_red(child_id, func),
+            _ => self.make_ired(child_id, func),
         }
     }
+
+    //   ___       _   _       _           _   __  __      _        _              
+    //  / _ \ _ __| |_(_)_ __ (_)______ __| | |  \/  |_  _| |_ __ _| |_ ___ _ _ ___
+    // | (_) | '_ \  _| | '  \| |_ / -_) _` | | |\/| | || |  _/ _` |  _/ _ \ '_(_-<
+    //  \___/| .__/\__|_|_|_|_|_/__\___\__,_| |_|  |_|\_,_|\__\__,_|\__\___/_| /__/
+    //       |_|                                                                   
 
     // Takes a base node and two child nodes, and modifies the base
     // node, attaching children as needed.  Returns true if the
@@ -786,6 +831,12 @@ where
         }
     }
 
+    //  ___          _           _ 
+    // |   \ ___ _ _(_)_ _____  | |
+    // | |) / -_) '_| \ V / -_) |_|
+    // |___/\___|_| |_|\_/\___| (_)
+    //                             
+    
     // Given a node and token, returns a node that represents the
     // derivative of the node passed in.
     //
