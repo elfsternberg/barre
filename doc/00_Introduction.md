@@ -368,7 +368,7 @@ Function, Constructor}, BARGE can be the core for a type checker.
 
 And yes, I think we can make it go fast.
 
-## The First Implementation: V 0.0.0α1
+## The First Implementation: Naive Implementation
 
 The first successful implementation of Brzozowski's algorithm in Rust,
 which can be found deep in the git log for the project, is just a
@@ -390,7 +390,7 @@ to revisit it once I better understand the problems involved.  The use
 of indexes into the arena as pointers to other nodes has been a boon to
 performance, but the memory costs are substantial, and remain so.
 
-## The Second Implementation: V 0.0.0α2
+## The Second Implementation: Smart Epsilons
 
 The second implementation had a *lot* of improvements, so I'm going to
 talk about them in theoretical terms.  As I mentioned in the
@@ -447,7 +447,7 @@ While this is technically a catamorphism (the structure of the returned
 parse tree is destroyed), it's highly unsatisfying and ad-hoc.  To meet
 Henglein's challenge, we need something more advanced.
 
-## The Third Implementation
+## The Third Implementation: The Big Recurse
 
 The third implementation introduces *recursive regular expressions* into
 the system.  And this is where things started to get very, very
@@ -588,8 +588,10 @@ output value is possible.
 Every regular expression *is a* function; that is, it has a distinct
 input (a string), and a distinct output (a boolean for recognition; a
 parse tree for parsing).  The nullability of a regular expression is
-also a function; it's input is a regular expression, and its output is
-a boolean.
+also a function; it's input is a regular expression, and its output is a
+boolean. The derivative of a regular expression is itself a regular
+expression, which means that the derivative function may have a *fixed
+point.*
 
 A function has a fixed point if, when you insert that value into the
 function, you get the same value out.  The derivative of a regular
@@ -598,7 +600,9 @@ fixed of a regular expression.  The regular expression `a*` has many
 fixed points, but one of them is *least*, one of them does the least
 amount of work, produces the smallest parse tree, and iterates the
 fewest times: `ε`.  We assume that our expressions always terminate,
-that on each iteration they consume a string of finite length.
+that on each iteration they consume a string of finite length, so we
+assume that every regular expression, even a recursive one, has a fxed
+point.
 
 The smallest regular expression that correctly handles a recursive
 expression is the *least* expression, the *least upper bound* on the set
@@ -629,13 +633,110 @@ know more, this is what I read to try and understand it better: [The
 Fixed Point
 Theorem](http://www.cs.cornell.edu/courses/cs6110/2013sp/lectures/lec20-sp13.pdf).
 
-## The Fourth Implementation
+## The Fourth Implementation: Smart Constructors
 
-Optimized constructors
+The fourth implementation is actually taken less from example source
+code and more directly from Adams' paper, [On the Complexity and
+Performance of Parsing with Derivatives](TK), in which he outlines
+certain substitutions.
 
-## The Fifth Implementation
+Kleene, the "discoverer" of regular expressions, defined them as
+[operations on a set](https://en.wikipedia.org/wiki/Kleene_algebra).  In
+fact, they're operations on a partially ordered set, which is why Might's
+& Adams's adaptations work so well.  But given that a regular expression
+is a set (and we've used some set notation to describe them already),
+it's possible to say some interesting things about them.
 
-External Catamorphisms
+Let's define a regular expression the way Kleene did: ({}, {ε}, ⊕, ⊗,
+𝔸˟), that is, an expression can be empty, the empty string, alternation,
+or sequencing of words derived from an alphabet).  In this construction,
+called a *semiring*, the first two elements have a special role.
+Another semiring is arithmetic of natural numbers (remember them?), and
+are defined as (0, 1, +, ⨯, ℕ).  Categorically, we can "map" these
+operations up to the above operations, and set theory will show that
+these hold true:
+
+- `0 * n == 0` is categorially `{} ⊗ R = {}`; that is, the empty
+expression rejects everything, so if it's concatenated with any
+expression, the concatenating expression always rejects.
+
+- `1 * n == n` is categorically `{ε} ⊗ R == R`; the empty string
+concatenated with expression is just that expression.
+
+- `0 + n == n` is categorically `{} ⊕ R`; the reject string alternated
+with an expression is just that expression.
+
+Since alternation and especially concatenation are the source of the
+greatest number of new nodes generated in our system, it behooves us to
+try and eliminate the number of new nodes generated.
+
+In several instances in the code, I replaced the naive constructors with
+node factories, which in turn will, given the child nodes to be
+associated with it, return something other than the node requested.
+If a sequence node's derivative children would produce a null parser,
+the other child node is returned unwrapped, and so on.
+
+Between Adams' reduction of the cost of nullability determination, and
+the automated elimination of "dead" paths, Brzozowski regular
+expressions are now a stone's throw away from competing with Rust Regex.
+
+## The Fifth Implementation: Internal Catamorphisms
+
+So this is where things start to get even weirder.  With me so far?
+Right, what have we done?
+
+1. Created a memory model that's leaky but fast.
+2. Implemented the fastest construction set possible.
+3. Implemented the fastest nullification paths possible.
+4. Implemented a universal record-keeping scheme to track parsing.
+
+The word "universal" there is pretty important.  It goes back to
+Henglein's point: *our* parse engine returns everything we care about,
+but... not really.
+
+One of the things that modern regular expression engines *do* is return
+structured information.  It returns this information by *annotating* the
+regular expression tree at certain points with information unrelated to
+the act of parsing.  The most obvious of these is the *collection
+group*, an array of values extracted from sub-expressions of the regular
+expression.
+
+Might proposes that we steal a concept from *parser combinators* with
+which to implement Henglein's ideal: we create a new node called a
+*Reduction*.
+
+If you're familiar at all with functional programming, you will have
+encountered `map`, `filter`, and `reduce`.  Reduce is the catamorphism:
+with it, we convert the parse tree into *something else*.  We can
+annotate it with labels and return a `struct` of parsed information,
+such as a capture group.  Or we can do some serious processing on it and
+return a struct that's some node in the intermediate representation of a
+programming language.
+
+For the fifth iteration, I implemented *internal catamorphism* only.  If
+the input type is a string, then its symbols are chars, and the return
+type is no longer a tree of chars, but instead just another string.  The
+catamorphisms introduced in this iteration are:
+
+- if a smart epsilon of type string is concatenated with an expression,
+the value of the smart epsilon is replaced with itself concatenated with
+the result of the expression.
+
+- if a tree is a left-heavy sequence (see "It's slow, part 3" above), we
+can rebalance it to be right-heavy and linear, but then we have to use a
+reduction to restore the resulting tree to a left-heavy sequence of
+results.
+
+- if we have multiple catamorphisms, we can move them up above the
+derivation, so that each only has to handle the result once.
+
+In short, we introduce a new node that holds a *function* designed to
+take a parse tree and return a parse tree.  If we define the tree as
+holding strings rather than characters, then what we get back is a
+highly efficiently parsed string of the result.  This is barely better
+than the previous iteration (only the left-heavy sequence is improved,
+and that ought to be a rare occurence).  But it lays the ground work for
+the next iteration.
 
 ## The Six
 
