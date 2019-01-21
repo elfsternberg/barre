@@ -1,9 +1,11 @@
 use barre::Barre;
+use barre::barre::cast;
 use barre::Grammar;
+
 
 #[test]
 fn beer() {
-    let mut grammar = Grammar::<char, char>::new();
+    let mut grammar = Grammar::<char, char>::new(cast);
     let b = grammar.make_tok(&'b');
     let ee = {
         let e1 = grammar.make_tok(&'e');

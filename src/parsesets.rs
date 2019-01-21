@@ -1,6 +1,7 @@
 use consy::Cell;
 use indexmap::IndexSet;
 use siaa::Siaa;
+use std::rc::Rc;
 
 pub type NodeId = usize;
 
@@ -27,8 +28,10 @@ pub trait ParseTreeExtractor<T: Siaa, U: Siaa> {
 
 pub type IRedFn<T, U> = Fn(&mut ParseTreeExtractor<T, U>, &Forest<U>) -> Forest<U>;
 
+// This is the reduction type to be used by consumers.  It takes a
+// parse forest and returns a parse forest.  What's in the forest is,
+// well, up to the user.
 pub type RedFn<U> = Fn(&Forest<U>) -> Forest<U>;
-
 
 impl<U: Siaa> Forest<U> {
     pub fn new() -> Forest<U> {

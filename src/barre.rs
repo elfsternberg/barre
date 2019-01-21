@@ -13,15 +13,21 @@ use siaa::{Riaa, Siaa};
 
 pub struct Barre<T: Siaa + 'static, U: Riaa<T> + std::convert::From<T> + 'static>(Grammar<T, U>);
 
-impl<T: Siaa, U: Riaa<T>> Barre<T, U>
+pub fn cast<T: Siaa, U: Riaa<T>>(t: &T) -> U
+    where U: std::convert::From<T>
+{
+    T::into(t.clone())
+}
+
+impl<T: Siaa + 'static, U: Riaa<T> + 'static> Barre<T, U>
     where U: std::convert::From<T>
 {
     pub fn from_language(lang: &Language<T>) -> Barre<T, U> {
-        Barre(Grammar::from_language(lang))
+        Barre(Grammar::from_language(lang, cast))
     }
 
     pub fn new() -> Barre<T, U> {
-        Barre(Grammar::new())
+        Barre(Grammar::new(cast))
     }
 
     pub fn from_grammar(gram: Grammar<T, U>) -> Barre<T, U> {

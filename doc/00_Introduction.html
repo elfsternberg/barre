@@ -1,8 +1,172 @@
+<h1 id="regex-science">REGEX Science</h1>
+<h2 id="introduction">Introduction</h2>
+<p>I was inspired by Araz Abishov's <a href="http://abishov.com/xi-editor/docs/rope_science_00.html">Rope Science</a> series, in which he outlines the underlying technology of ropes (super-powered strings in the programming language sense of the word) used in the text editor project he works on, <a href="https://github.com/xi-editor/xi-editor">Xi</a>. I was also inspired by Feynman's Technique for Learning Anything, which is pretty much how I got into this:</p>
+<ol style="list-style-type: decimal">
+<li>Pick a topic and start studying it. Write everything down.</li>
+<li>Try to teach the topic to someone else.</li>
+<li>The gaps in your knowledge will be obvious. Go back and study.</li>
+<li>Simplify, simplify, simplify.</li>
+</ol>
+<p>Still, a warning. Regular expressions, for all their practical use, are fundamentally and mathematically <em>weird</em>. Although this series is about a regular expression engine written in <a href="https://www.rust-lang.org/">Rust</a>, there are going to be some Haskell words thrown around later. Words like &quot;catamorphism,&quot; and &quot;semiring,&quot; and &quot;least fixed points of operations on sets.&quot;</p>
+<p>Part of this document's job will be to explain those terms as clearly as possible.</p>
+<p>There is a fairly long bibliography.</p>
+<h2 id="chapter-1-the-very-very-very-beginning.">Chapter 1: The very, very, very beginning.</h2>
+<h3 id="what-is-a-regular-expression">What is a regular expression?</h3>
+<p>What is a regular expression? Let's build up from the bottom: we start with:</p>
+<dl>
+<dt>Alphabet</dt>
+<dd>An alphabet is a set of symbols
+</dd>
+<dt>Word</dt>
+<dd>A word is a sequence of symbols from an alphabet
+</dd>
+<dt>Language</dt>
+<dd>A language is a set of word sequences
+</dd>
+</dl>
+<p>If our alphabet is ASCII and words are English, then a very simple language would be something like</p>
+<pre><code>Common_Pets: {dog, cat, fish, hamster, parakeet}.</code></pre>
+<p>For the most part, we're going to concentrate on ASCII and Unicode, and not until much, much later in this series are we going to discuss are we going to go with anything else. So for our purposes, I'm going to use &quot;character&quot; instead of &quot;symbol.&quot; Because our &quot;words&quot; aren't words as Latin languages understand them, I'll use &quot;string&quot; instead:</p>
+<ul>
+<li>A language is a set of strings made up of characters.</li>
+</ul>
+<h3 id="deterministic-finite-automata">Deterministic finite automata</h3>
+<p>The other thing we have to understand is: What is a deterministic finite automata, or DFA? A DFA is a graph, a series of nodes and arrows, that describes a state machine. A small DFA looks like this:</p>
+<pre><code>      +---+    +---+    +---+    +---+
+      |   | C  |   | A  |   | T  | ! |
++----&gt;+   +---&gt;+   +---&gt;+   +---&gt;+   |
+      +---+    +---+    +---+    +---+
+      </code></pre>
+<p>This is a DFA. Each node represents a state in the processing of a string, and each arrow represents a transition rule from one state to the next. This one recognizes &quot;CAT&quot;. The exclamation point in the box means that when the DFA transitions to that box, the DFA is in the &quot;Accept&quot; state, and it has recognized the string. Any other string, or an incomplete input, or no input, and the DFA is in the &quot;Reject&quot; state.</p>
+<pre><code>                        +---+
+                    U   |   |
+                  +---&gt; |   |
+                  |     +-+-+
+                  |       |
+      +---+    +--++    +-v-+    +-v-+
+      |   | C  |   | A  |   | T  |   |
++----&gt;+   +---&gt;+   +---&gt;+   +---&gt;+   |
+      +---+    +---+    +---+    +---+</code></pre>
+<p>This DFA has an &quot;or&quot; in it. In a traditional regular expression, we'd write this as <code>C(A|U)T</code>, and it recognizes &quot;CAT&quot; or &quot;CUT&quot;.</p>
+<p>A DFA defines a <em>regular language</em>. There's a if-and-only-if relationship between DFAs and regular languages: A language is &quot;regular&quot; if one can construct a DFA that recognizes it. It's called &quot;regular&quot; because you can proceed from one to the other without any additional memory aside from the DFA itself.</p>
+<p>And that's the whole definition:</p>
+<ul>
+<li>a regular expression is a written formula that can be converted into a DFA</li>
+<li>the DFA can be used to recognize if a string passed to it belongs to a regular language described by the expression.</li>
+</ul>
+<p>That circular definition is Regular Expressions 101.</p>
+<h3 id="weeds-non-deterministic-finite-automata">Weeds: Non-deterministic finite automata</h3>
+<p>A DFA is the tool of choice for recognizing regular expressions, but if a regular expression has a lot of alternatives, especially nested alternatives, may result in an explosion of nodes. As an alternative, some regular expressions use non-deterministic finite automata (NFA). An NFA is one in which each node may have multiple arrows leading to other nodes <em>for the same character</em>. For each successive character, multiple states have to be checked for transition, and as long as one of them succeeds, the NFA is still seeking the Accept state.</p>
+<p>An NFA uses signficantly less memory than a DFA; at most, it uses twice the memory as the number of states, once for the nodes and transition, and once for the largest possible number of nodes that may be tracked on any iteration, at the cost of some CPU.</p>
+<p>There are a number of variants on representations of NFAs; the most common algorithm, <a href="https://en.wikipedia.org/wiki/Thompson%27s_construction">Thompson's Construction</a>, creates NFAs with lots of &quot;empty&quot; states, that immediately transition even when no character is available for processing. <a href="https://en.wikipedia.org/wiki/Glushkov%27s_construction_algorithm">Glushkov's Construction</a> generates NFAs without empty states.</p>
+<p>Every regular expression can be turned into a DFA, every DFA can be turned into an NFA, and every NFA can likewise be rendered as a regular expression. They are just different representations of the same thing.</p>
+<h3 id="recognition-isnt-everything">Recognition isn't everything</h3>
+<p>One thing you may have noticed is that all we've discussed is how regular expressions <em>recognize</em> strings that belong to the language they represent. And in fact, that's all they could do for a very long time. A regular expression is an <em>expression</em> in the <a href="https://fsharpforfunandprofit.com/posts/expressions-vs-statements/">programming language sense</a>: after construction (and note, that's very important), a regular expression is a function that takes a string and returns Accept or Reject. True or False: that string is in the language the regular expression recognizes.</p>
+<p>Modern regular expression engines want more than that. We want data to be returned. Parentheses in modern regex dialects return their contents, letting us find and analyze the content of strings. Modern regular expression engines <em>parse</em> our data for us.</p>
+<p>The most common regular expression engines are <a href="https://www.pcre.org/">PCRE</a> and <a href="https://github.com/google/re2">RE2</a>. Both use a three-step strategy for regular expressions. They first analyze the regular expression with a cost and complexity function, and if the expression is simple and only basic recognition is wanted, they use a DFA. If the expression would result in an exponential explosion of nodes, they switch to an NFA. And if backreferences are required, they break the resulting NFA into smaller segments and use a full-fledged virtual machine, a mini-programming language interpreter, to do the work, store the result, and return the verdict. All of them start from Thompson's Construction.</p>
+<p>The data these engines return is ad-hoc and opportunistic. It does what users want it to do, which is fine, but the capture groups and named capture groups are just &quot;tacked onto the side.&quot; Often with much engineering thought, but still, not central to the algorithm.</p>
+<h3 id="the-alternative">The Alternative</h3>
+<p>Thompson and Glushkov's Constructions work because they're easy to understand and code (in theory, although in practice PCRE and RE2 are engineering marvels). There is a third mechanism, described in 1965: Brzozowski's Algorithm.</p>
+<p>Janus Brzozowski proposed a simple (<a href="https://www.infoq.com/presentations/Simple-Made-Easy">but not easy</a>) algorithm for constructing a given regular expression, with its sequences of letters, alternatives, and so forth, into a very simple sequence, and then he said that the <em>only</em> DFA you really needed was the one necessary to handle the very next character; you only needed to construct the next stage of the DFA once that character had been processed.</p>
+<p>The Brzozowski algorithm starts with a regular expression, and then <em>for each character</em> generates an entirely new regular expression designed to handle <em>the rest of the candidate string</em>. When the string is empty, if the algorithm accepts the empty string, we are in an Accept state; otherwise Reject.</p>
+<p>That's the theory.</p>
+<p>For our next chapter, we'll get deeper into the theory. A <em>lot</em> deeper. Thompson is an engineer (and a good one; he gave us Unix, Unicode, and the Go programming language), and to the extent that he cares about &quot;the math&quot; it's only to shore up his intuition. As he once said, &quot;When in doubt, use brute force.&quot;</p>
+<p>Thompson's Construction is elegant, but still brute force. That's why it's called a <em>construction.</em> Brzozowski's Algorithm is called an <em>algorithm</em> because Brzozowski was a mathematician.</p>
+<p>Get ready for some math.</p>
+<h2 id="chapter-2-the-math-of-regular-expressions">Chapter 2: The Math of Regular Expressions</h2>
+<p>In 1951, Stephen Kleene invented regular expressions. He said there were six common operations that we wanted to do with search strings, and they are:</p>
+<pre><code>R ::= ∅ | ε | c | R1 ◦ R2 | R1 ∪ R2 | R*</code></pre>
+<p>Regular expressions are built out of other regular expressions. Each one of those is a function that takes a string and returns Accept or Reject.</p>
+<p>The first three are the primitives. <code>∅</code> returns Reject no matter what you give it. It's always Reject. <code>ε</code> return Accept if you pass it an empty string, and Reject for anything else. <code>c</code> is a character; it return Accept if the string you pass it has exactly that character, and Reject otherwise.</p>
+<p>The last three are the composites. <code>R1 ◦ R2</code> is just sequence: the first regular expression followed by the second. The expression &quot;ab&quot; is three regular expressions: two characters, and a sequence to put them in order. <code>R1 ∪ R2</code> is alternation; if either returns Accept, then the whole expression returns Accept. <code>R*</code> is the star operator you know: if zero or more instances of the contained expression Accepts, then the whole expression Accepts.</p>
+<p>Thompson's Construction basically starts at the head of the regex and begins, primitive by primitive and composite by composite, recursively building out an NFA until there is only a list of characters to recognize, a table of transition states from one to the next, and a stack as big as that table of &quot;next states.&quot;</p>
+<p>Brzozowski's algorithm is understandably different. Brzozowski wondered if, for any regular expression after one character, you could derive a new regular expression for the rest of the language to be recognized. He discovered that there was, and this is what he came up with:</p>
+<pre><code>Dc(∅) = ∅
+Dc(ε) = ∅
+Dc(s) = if c == s then ε else ∅
+Dc(R1 ∪ R2) = Dc(R1) ∪ Dc(R2).
+Dc(R*) = ε ∪ Dc(R) ◦ R
+Dc(L1 ◦ L2) = if ε ∈ R1 then Dc(R1) ◦ R2 else Dc(R1) ◦ R2 ∪ Dc(R2)</code></pre>
+<p>Here, <code>Dc</code> means &quot;The derivative with respect to a character.&quot; As you can see, null becomes null, empty becomes null, a character becomes empty (this is used as a signal to &quot;keep going&quot;). The derivative of an alternation is the alternation of the derivatives, the derivative of the star was the derivative of the language, sequenced with the star of the language.</p>
+<p>And sequence is where things get very tricky. Sequences are of two other expressions, so if the left expression <em>can</em> handle empty, then both the left and right have to be assessed as possible alternations. But if the left expression is long, how can you know it <em>can</em> handle empty? Brzozowksi discovered a function to determine this, and used <code>δ</code> to symbolize it.</p>
+<pre><code>δ(∅) = ∅
+δ(ε) = ε
+δ(c) = ∅
+δ(R1 ∪ R2) = δ(R1) ∪ δ(R2)
+δ(R1 ◦ R2) = δ(R1) ◦ δ(R2)
+δ(R*) = ε.</code></pre>
+<p><em>RANT:</em> This function is called &quot;the nullability function.&quot; Each of Brzozowski's <code>Dc</code> functions returns another regular expression, and we say an expression is &quot;nullable&quot; when it can return the <em>empty string expression</em>, the <code>ε</code> (epsilon) expression, <em>not</em> when it can return the <em>empty expression</em>, the one symbolized by <code>∅</code> (null). This drove me crazy for about a month. Just remember that when we talk about the nullability function, we're talking about the one that determines whether or not the derivative of a regular expression can (not will, <em>can</em>) return the empty string handling expression.</p>
+<p>You may wonder why the nullability rules have <code>∅</code> or <code>ε</code> as their result, instead of <code>True</code> and <code>False</code>. That reason is simple: the sequence rule is easier to write:</p>
+<pre><code>Dc(R1 ◦ R2) = (Dc(R1) ◦ R2) ∪ (δ(R1) ◦ Dc(R2)).</code></pre>
+<p>Here, <code>∅</code> becomes an <em>annihilator</em>. <code>∅</code> sequenced with anything becomes just <code>∅</code>, and <code>∅ ∪ R</code> becomes just <code>R</code>, while <code>ε</code> is just the identity, so <code>ε ◦ R == R</code>. Think of <code>∅</code> and <code>ε</code> as zero and one, <code>◦</code> as multiplication, and <code>∪</code> as addition. (In fact, deep, deep down in abstract algebra theory, sequencing it is <em>exactly</em> like multiplication and alternation is <em>exactly</em> like addition. So much so that we can apply certain strategies to make this engine go much, much faster than the theory would suggest.)</p>
+<p>That's the start of the math. We'll get deeper into it in a moment.</p>
+<p>But first, let's talk about the challenges.</p>
+<h2 id="challenges.">Challenges.</h2>
+<blockquote>
+<p>&quot;You seem a decent fellow. I hate to kill you.&quot; &quot;You seem a decent fellow. I hate to die.&quot;</p>
+</blockquote>
+<dl>
+<dt>Recognition vs Parsing</dt>
+<dd>The algorithm so far still only handles recognition!
+</dd>
+<dt>It's slow (part 1)</dt>
+<dd>The sequencing operation can produce a ton of useless nodes, and that's computation time we could put to better use.
+</dd>
+<dt>It's slow (part 2)</dt>
+<dd>Because the front of the operation is constantly changing the regular expression, the nullability of expressions under consideration can also change. For every character, we must traverse the entire remaining tree to determine nullability, and that's computationally expensive.
+</dd>
+<dt>It's slow (part 3)</dt>
+<dd>Sequences are always in pairs. A poorly-built sequence, represented in memory as, for example <code>seq(seq(seq(seq('a', 'b'), 'c'), 'd'), 'e')</code> will create a tree with a left-heavy branch that the engine must traverse to reach the <em>current</em> node of interest.
+</dd>
+<dt>It's memory-intensive</dt>
+<dd>The algorithm leaves behind a lot of <em>abandoned nodes</em> as it proceeds forward. In a garbage-collected language that wouldn't be a problem, but the target language here is Rust.
+</dd>
+<dt>It's ambiguous</dt>
+<dd>This is a common problem in regular expression engines. for the expression <code>(a|ab)</code> and the string &quot;absent&quot;, what do you get back? The answer is: <em>it depends</em>. Perl, POSIX, BSD, and PEG all have different rules for disambiguation of alternatives.
+</dd>
+<dt>It's unremarkable</dt>
+<dd>There are already several regular expression engines, including two for Rust.
+</dd>
+</dl>
+<p>Here's a hint of what's to come: with the BARGE common core, you get regular expression parsing. You also get <em>Context Free Grammar</em> parsing supporting left-recursion for free, so you can write programming language parsers with BARGE. You get <em>an arbitrary disambiguation strategy</em> supporting &quot;all of the above.&quot; You get <em>a complete, specified, type-safe data extraction strategy</em>. Combine those three and you get <em>PEG parsing</em>... well, not &quot;free&quot;, but with not that much extra work (until you add semantic actions, then things get hairy). The data extraction strategy allows you to build a <em>streaming parser</em> and a <em>partial parser</em>, giving you a Language Server Protocol for your programming language, with syntax error checking, for free.</p>
+<p>The interior protocol is easily extensible, which allows us to support Extended Regular Expressions. Regular Expressions can be wholly expressed in set-theoretic language, the most evident of which is the use of the union operator <code>∪</code> to describe the sets of return values from alternation. But an Extended Regular Expression (ERE) can also support intersection (both expressions must Accept on a simultaneous sequence of characters), negation (an expression that returns Accept is rejected, and vice versa), and more. And extension to ERE (yes, there are such) adds the interleaf operator, which is like sequence in that every child expression must be present, but they can be present <em>in any order</em>.</p>
+<p>Yes, there is a use case for the interleaf operator.</p>
+<p>And just to push what BARGE can do even further, consider this: regular expression functions are <em>membership testing</em> and answer the question &quot;is this string a member of the language described by this expression?&quot; Let's say you're writing a programming language with algebraic data types. Checking to see if a type declaration in the current scope is valid is also membership testing. If instead of ASCII or Unicode, your alphabet consists of the set {Int, Float, Char, Bool, Unit, List, Function, Constructor}, BARGE can be the core for a type checker.</p>
+<p>And yes, I think we can make it go fast.</p>
+<h2 id="the-first-implementation-v-0.0.0α1">The First Implementation: V 0.0.0α1</h2>
+<p>The first successful implementation of Brzozowski's algorithm in Rust, which can be found deep in the git log for the project, is just a recognizer for simple regular expressions. It was a testbed for the entire project, and it ended up going through several wild gyrations before settling on the version that was committed to Github. It had the two basic features: Nodes that processed and derived their own derivatives, and a table of rules for nullability. Nullability was derived repeatedly and with recursive scanning that did no caching whatsoever.</p>
+<h3 id="the-memory-arena">The Memory Arena</h3>
+<p>The first implementation also made a fateful decision: the table of nodes, and their relationships, would be kept in a <a href="https://exyr.org/2018/rust-arenas-vs-dropck/">memory arena</a>. That decision stands as of today. The arena is hand-made and crude, and I have plans to revisit it once I better understand the problems involved. The use of indexes into the arena as pointers to other nodes has been a boon to performance, but the memory costs are substantial, and remain so.</p>
+<h2 id="the-second-implementation-v-0.0.0α2">The Second Implementation: V 0.0.0α2</h2>
+<p>The second implementation had a <em>lot</em> of improvements, so I'm going to talk about them in theoretical terms. As I mentioned in the <em>Challenges</em> section, the algorithm in V.α1 only recognized, rather than parsed, the contents of the regular expression. There is a way to fix this.</p>
+<h3 id="smart-epsilon">Smart Epsilon</h3>
+<p>Fritz Henglein <a href="http://www.cs.ox.ac.uk/ralf.hinze/WG2.8/27/slides/fritz.pdf">gave a lecture</a> about the ad-hoc, opportunistic instrumentation in most regular expression engines to derive <em>some</em> information. &quot;Ideally,&quot; he said, &quot;regular expression matching is about parsing the string and, if accepted, doing catamorphic processing on the resulting parse tree.&quot;</p>
+<p>&quot;Catamorphism&quot; is one of those <em>Haskell words</em> I warned you about. The word has the same root as &quot;catastrophe,&quot; and can be thought of us a destructive operation. It's not difficult concept: it's the <code>reduce</code> function, but applied to containers in a generic way. The function &quot;sum of everything in a list of integers&quot; is a catamorphism: it extracts useful information from a list, but what it returns isn't a list, and the contents of the list can't be derived from its sum. The function &quot;sum of everything in a tree of integers&quot; and &quot;sum of everything in a set of integers&quot; are <em>the same catamorphism</em>: <code>sum</code> of a collection, without caring about what kind of container it is. As long as there's a rule for visiting every element once, the <code>sum</code> catamorphism can be applied.</p>
+<p>So that's what Henglein is talking about.</p>
+<p>Matt Might's <a href="http://matt.might.net/papers/might2011derivatives.pdf">Parsing With Derivatives</a> takes this idea seriously. In the third iteration of his <a href="https://racket-lang.org/">Racket</a> implementation, he introduces the <em>smart epsilon</em>.</p>
+<p>If we consider, as Brzozowski does, a regular expression as a left-to-right succession of nested regular expressions, the &quot;front&quot; of the algorithm moves rightward with each character analyzed, replacing nodes at the front with successive derivatives, until both the string and the expression are fully consumed, and everything to the left of the front is discarded. Henglein and Might say, instead, that we should <em>replace</em> the processed nodes with nodes containing the actual content of the string that was accepted.</p>
+<p>The smart epsilon does that; it can be constructed with <code>None</code>, or with <code>Some(char)</code>. In the latter case, it represents a character that has been processed and accepted. If the entire operation succeeds, we scan the entire tree one last time, joining all the found characters, and returning the string.</p>
+<p>While this is technically a catamorphism (the structure of the returned parse tree is destroyed), it's highly unsatisfying and ad-hoc. To meet Henglein's challenge, we need something more advanced.</p>
+<h2 id="the-third-implementation">The Third Implementation</h2>
+<p>The third implementation introduces <em>recursive regular expressions</em> into the system. And this is where things started to get very, very strange.</p>
+<p>Let's review: Brzozowski's Algorithm defines a directed finite automata (a directed graph) of nodes that define a character, a sequence of two nodes one after another, an alternative between two nodes, and the repetition of nodes, along with two &quot;special&quot; cases, the null case and the empty string case. In the case of sequences, if the left node can accept the empty string, then both the left and right nodes must be processed simultaneously as alternatives; this exactly corresponds to &quot;empty set node&quot; conditions in Thompson's Construction of an NFA.</p>
+<p>As a reminder of my rant in chapter 2, testing for the &quot;empty&quot; case is called <em>nullability</em>, and testing for the &quot;null&quot; case is called <em>termination</em>. Yeah, I'm still not happy about that.</p>
+<p>The problem with a recursive regular expression is that it's <em>recursive</em>, and in our DFA that means at least one complete node <em>points back</em> to itself under some condition. For the most basic example, we could take out the repetition operator (the star operator, <code>*</code>) and replace it with recursion:</p>
+<blockquote>
+<p><code>R∗ =εₛ ∪ (R ◦ R*)</code></p>
+</blockquote>
+<p>Epsilons with lattice scanning</p>
+<h2 id="the-fourth-implementation">The Fourth Implementation</h2>
+<p>Optimized constructors</p>
+<h2 id="the-fifth-implementation">The Fifth Implementation</h2>
+<p>External Catamorphisms</p>
+<h2 id="the-six">The Six</h2>
 <h1 id="barge-and-barre">BARGE and BARRE</h1>
-<p>Welcome to Barge (Brzozowski's Algorimth for Regular Grammars Engine) and Barre (Barge Applied to Rust Regular Expressions). In this series of documents we describe what regular grammars and regular expressions are, where they came from, and how Barge and Barre handle them different from the traditional mechanisms found in most programming languages.</p>
-<p>As most people know them, regular expressions are used to recognize strings in a body of text. A regular expression is a kind of miniature programming language: you program it using a pattern in a <em>regex dialect</em> (more on that <a href="TK">later</a>), and then give it a body of text, and you get back a data structure indicating the success state of the match and how much was matched.</p>
-<p>But regular expressions are much more than that, and as we'll see in this book, they lead to some very interesting places in the development of programming languages. More importantly, some modern discoveries about the implementation of regular expression leads to the unification of regular expressions and context-free grammars— and the replacement of many of the ad-hoc formalities of lexing-vs-parsing with a unified library of tools for turning text into data structures.</p>
-<p>Let's lay some groundwork.</p>
+<p>Welcome to Barge (Brzozowski's Algorimth for Regular Grammars Engine) and Barre (Barge Applied to Rust Regular Expressions). In this series of documents we describe what regular grammars and regular expressions are, where they came from, and how Barge and Barre handle them differently from the traditional mechanisms found in most programming languages.</p>
+<p>The term &quot;regular expression&quot; has come to mean a function that recognizes a specified string of text in a larger body of text. The function is specified via a string of its own: <code>/i want (some )? (c[oa]ke|cookies)/i</code> would recognize the strings &quot;I want Coke&quot; and &quot;I want some cookies&quot; but not &quot;I want the chocolate&quot;.</p>
+<p>A regular expression therefore is a miniature programming language that compiles into a function that analyzes strings and returns useful information about the string. That information could be a simple &quot;Yes, the string is present,&quot; as it is in the familiar Unix <code>grep</code> utility, or it could be a full parse of the string, returning small, extracted components of the string for further analysis.</p>
+<p>But regular expressions are much more than that, and as we'll see in this documentation, they lead to some very interesting places in the development of programming languages. More importantly, some modern discoveries about the implementation of regular expression leads to the unification of regular expressions and context-free grammars— and the replacement of many of the ad-hoc formalities of lexing-vs-parsing with a unified library of tools for turning text into data structures.</p>
+<p>There is no getting around one important detail: Barre gives the user an experience similar to that of the Rust Regex library, but the underlying toolkit, Barge, is a significantly different and more powerful tool than the usual regular expression libraries. It's a little bit slower, but that sacrifice is speed is, in our opinion, more than made up for in the utility, power, and capability of the Barge engine.</p>
 <h2 id="regular">&quot;Regular&quot;</h2>
 <p>In 1958, <a href="https://en.wikipedia.org/wiki/Regular_expression">Stephen Kleene</a> took <a href="https://en.wikipedia.org/wiki/Chomsky_hierarchy">Noam Chomsky</a>'s notion of linguistic hierarchies and applied them to computer science. He started with the following ideas.</p>
 <ul>
@@ -66,8 +230,15 @@
 <dd>AT LEAST ONE: Constructed out of another language, this returns True if the string passed to it contains one or more instances of that language.
 </dd>
 </dl></li>
+<li><dl>
+<dt><code>L1 | L2</code></dt>
+<dd>INTERLEAF: Constructed out of two languages, returns true if L1 is followed by L2, <em>or</em> L2 is followed by L1.
+</dd>
+</dl></li>
 </ul>
 <p>The <strong>+</strong> operator can be built out Kleene's base operators: <code>L+ ::= L ◦ L*</code>. Likewise, regular expression libraries that support both intersection and negation can express some extremely difficult languages that can't be expressed easily.</p>
+<p>The &quot;interleaf&quot; operator may ask: why would anyone want that? Consider an operation over programming language tokens, rather than individual letters of an alphabet, as advanced parsers like YACC may do, for parsing HTML. The attributes of an HTML tag can be <em>in any order</em>.</p>
+<p>The interleaf operator allows you to write an <a href="https://stackoverflow.com/questions/1732348/regex-match-open-tags-except-xhtml-self-contained-tags/1732454#1732454">HTML parser in regex</a> that actually works.</p>
 <p>One thing Kleene's library can't handle is <em>nested</em> expressions. Nested parentheticals are beyond Kleene's algorithm to handle them because it has no means of keeping track of how often the nesting has happened. It only recognizes letters as they're coming in and keeps no record of what it's seen before.</p>
 <h2 id="expression">&quot;Expression&quot;</h2>
 <p>One loose breakdown in programming languages is between those that are &quot;statement oriented&quot; and those that are &quot;expression oriented.&quot; In the C programming language, for example, an <em>if statement</em> looks like this:</p>
@@ -78,3 +249,5 @@
 <p>Regular expressions are <em>expressions</em> because, once defined, each takes a value and returns a value: it takes a string and returns the results of recognizing (or failing to recognize) parts of that string. They're &quot;pure expressions&quot; in that they have no side effects, and can't do anything other than the recognition and conversion they're programmed to perform.</p>
 <h2 id="next-steps">Next Steps</h2>
 <p>We've reached 1960, the year when computer scientists and engineers began grappling with turning source code into running programs in a formal way, rather than the ad-hoc, hand-typed assembly language they'd been using through the previous decade. In the next chapter, we'll discuss a little more about the history of regular expressions, and how Kleene's mathematics were turned into the running programs we use today.</p>
+<h2 id="bibliography">Bibliography</h2>
+<p>HENGLEIN, Fritz. <a href="http://www.cs.ox.ac.uk/ralf.hinze/WG2.8/27/slides/fritz.pdf"><em>Kleen Meets Church: Regular Expressions as Types</em></a></p>

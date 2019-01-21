@@ -81,32 +81,33 @@ where
     pub start: NodeId,
 
     // Pre-reduction cast operator
-    pub cast: Rc<Fn(T) -> U>,
+    pub cast: fn(&T) -> U,
 }
 
 impl<T: Siaa, U: Riaa<T>> Grammar<T, U>
 where
     U: std::convert::From<T>,
 {
-    pub fn raw() -> Grammar<T, U> {
+    pub fn raw(cast: fn(&T) -> U) -> Grammar<T, U>
+    {
         Grammar {
             arena: Arena::new(),
             empty: 0,
             start: 0,
-            cast: Rc::new(|x| T::into(x)),
+            cast: cast,
         }
     }
 
-    pub fn new() -> Grammar<T, U> {
-        let mut grammar = Grammar::raw();
+    pub fn new(cast: fn(&T) -> U) -> Grammar<T, U> {
+        let mut grammar = Grammar::raw(cast);
         let _ = grammar.make_emp();
         grammar.empty = grammar.make_emp();
         grammar.start = grammar.empty;
         grammar
     }
 
-    pub fn from_language(lang: &Language<T>) -> Grammar<T, U> {
-        let mut grammar = Grammar::new();
+    pub fn from_language(lang: &Language<T>, cast: fn(&T) -> U) -> Grammar<T, U> {
+        let mut grammar = Grammar::new(cast);
 
         fn language_handler<T: Siaa, U: Riaa<T>>(lang: &Language<T>, g: &mut Grammar<T, U>) -> NodeId
         where
@@ -151,7 +152,7 @@ where
     }
 
     pub fn make_eps_from_token(&mut self, token: &T) -> NodeId {
-        let val = (*self.cast)(token.clone());
+        let val = (self.cast)(&token.clone());
         self.make_eps(&Rc::new(Forest(indexset!(Cell::Lit(val)))))
     }
 
@@ -204,7 +205,7 @@ where
     }
 
     pub fn set_eps_from_token(&mut self, target: NodeId, token: T) {
-        let val = (*self.cast)(token.clone());
+        let val = (self.cast)(&token.clone());
         self.set_eps(target, &Rc::new(Forest(indexset!(Cell::Lit(val)))));
     }
 
@@ -427,7 +428,7 @@ where
     }
 
     pub fn make_eps_from_token(&mut self, token: &T) -> NodeId {
-        let val = (*self.grammar.cast)(token.clone());
+        let val = (self.grammar.cast)(&token.clone());
         self.make_eps(&Rc::new(Forest(indexset!(Cell::Lit(val)))))
     }
 
