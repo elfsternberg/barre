@@ -10,12 +10,7 @@ default = []
 render_trees = []
 
 [dependencies]
-arena = { path = "arena" }
-consy = { path = "consy" }
 hashbrown = "0.1.7"
-
-[target.'cfg(feature = "render_trees")'.dependencies]
-dot = "0.1.4"
 
 [dev-dependencies]
 rand = "0.5.5"
